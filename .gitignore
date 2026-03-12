@@ -21,7 +21,7 @@ temp/
 .parcel-cache/
 .vite/
 
-# Fichiers de configuration locale
+# Fichiers de configuration locale (tous les .env sauf .env.example)
 .env
 .env.*
 .env.local
@@ -29,6 +29,12 @@ temp/
 .env.test.local
 .env.production.local
 .env.staging
+
+# Garder les fichiers .env.example comme templates
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
 config.local.php
 config.local.js
 config.local.ts
@@ -136,6 +142,13 @@ config/database.php
 config/app.php
 config/secrets.json
 secrets.json
+serviceAccountKey.json
+google-credentials.json
+firebase-credentials.json
+aws-credentials.json
+azure-credentials.json
+*.serviceAccount.json
+*firebase-adminsdk*.json
 
 # Fichiers de tokens et clés API
 api_keys.txt
