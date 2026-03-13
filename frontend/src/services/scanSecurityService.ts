@@ -114,14 +114,32 @@ class ScanSecurityService {
   async requestUnlock(request: UnlockRequest): Promise<UnlockResponse> {
     try {
       const deviceId = this.getDeviceId()
+      
+      // Pour les super_admin, utiliser admin override
+      if (request.method === 'admin_override') {
+        return this.adminOverrideUnlock(request.duration_minutes || 60)
+      }
+      
+      // Pour les admins simples, exiger un PIN explicite
+      if (request.method === 'pin') {
+        if (!request.pin) {
+          return {
+            success: false,
+            message: 'PIN requis pour accéder à la zone de scan',
+            method: request.method
+          }
+        }
+      }
+      
       const payload = {
-        method: request.method,
-        value: request.pin || '', // Le backend attend 'value' pour le PIN
+        method: 'pin',
+        value: request.pin,
         deviceInfo: {
           id: deviceId,
           name: 'Appareil Web',
           userAgent: navigator.userAgent,
           platform: navigator.platform,
+          type: 'web',
           timestamp: new Date().toISOString()
         },
         timestamp: new Date().toISOString(),
@@ -129,6 +147,7 @@ class ScanSecurityService {
         duration: request.duration_minutes || 60
       }
 
+      console.log('Payload envoyé au backend:', payload)
       const response = await apiClient.post('/api/scan/unlock/request', payload) as any
       
       if (response.success && response.session) {

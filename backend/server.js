@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
+const { sendCredentialsEmail } = require('./services/emailService');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
@@ -382,29 +383,6 @@ const requireAuthenticatedSessionWithActiveBadge = async (req, res, next) => {
     });
 
     if (!access.allowed) {
-      // Allow super_admin users even without an active badge
-      const isSuperAdmin = requester?.role === 'super_admin' || req.user?.user?.role === 'super_admin';
-      if (isSuperAdmin) {
-        req.badgeAccess = {
-          allowed: true,
-          code: 'SUPER_ADMIN_OVERRIDE',
-          message: 'Accès super_admin sans badge.',
-          badgeStatus: 'active',
-          dashboardPath: '/admin',
-          user: access.user || requester,
-          badgeToken: null
-        };
-        req.user = {
-          ...req.user,
-          user: {
-            ...(req.user?.user || {}),
-            ...(access.user || {})
-          },
-          userType: requesterType
-        };
-        return next();
-      }
-
       const status = access.code === 'USER_NOT_FOUND' || access.code === 'SESSION_INVALID' ? 401 : 403;
       return res.status(status).json({
         success: false,
@@ -432,6 +410,16 @@ const requireAuthenticatedSessionWithActiveBadge = async (req, res, next) => {
       message: 'Erreur lors de la validation du badge'
     });
   }
+};
+
+// Certains endpoints (ex: zone de scan admin) doivent rester accessibles aux admins
+// même s'ils n'ont pas encore de badge actif associé.
+const requireBadgeForEmployeOnly = async (req, res, next) => {
+  const requesterType = String(req.user?.userType || '').trim().toLowerCase();
+  if (requesterType === 'admin') {
+    return next();
+  }
+  return requireAuthenticatedSessionWithActiveBadge(req, res, next);
 };
 
 const normalizePhotoPath = (value) => {
@@ -3448,6 +3436,8 @@ app.post(['/api/admins', '/api/admin/admins'], validateToken, requireSuperAdmin,
     }
     
     const password = String(payload.password || '').trim() || defaultPassword;
+    const shouldSendCredentialsEmail = normalizeBooleanSetting(payload.sendEmail, true);
+    const credentialsEmail = { attempted: false, sent: false, error: null };
 
     if (!nom || !prenom || !email) {
       return res.status(400).json({
@@ -3499,11 +3489,28 @@ app.post(['/api/admins', '/api/admin/admins'], validateToken, requireSuperAdmin,
     });
 
     const mappedAdmin = await mapAdminForApi(createdAdmin);
+    if (shouldSendCredentialsEmail) {
+      credentialsEmail.attempted = true;
+      try {
+        await sendCredentialsEmail({
+          to: email,
+          recipientName: `${prenom} ${nom}`.trim(),
+          loginEmail: email,
+          password,
+          roleLabel: role
+        });
+        credentialsEmail.sent = true;
+      } catch (mailError) {
+        console.error('Erreur envoi email identifiants admin:', mailError);
+        credentialsEmail.error = String(mailError?.message || mailError);
+      }
+    }
     return res.status(201).json({
       success: true,
       message: 'Administrateur cree avec badge associe',
       admin: mappedAdmin,
-      badge: mapBadgeTokenForUi(badgeToken)
+      badge: mapBadgeTokenForUi(badgeToken),
+      credentials_email: credentialsEmail
     });
   } catch (error) {
     console.error('Erreur admins create:', error);
@@ -3807,6 +3814,8 @@ app.get('/api/admin/employes', validateToken, requireRoleManagementAccess, async
 
 app.post('/api/admin/employes', validateToken, requireRoleManagementAccess, async (req, res) => {
   try {
+    const shouldSendCredentialsEmail = normalizeBooleanSetting(req.body?.sendEmail, true);
+    const credentialsEmail = { attempted: false, sent: false, error: null };
     const normalizedPayload = normalizeEmployeMutationPayload(req.body || {}, {
       allowProfessional: true,
       allowRole: true
@@ -3829,6 +3838,7 @@ app.post('/api/admin/employes', validateToken, requireRoleManagementAccess, asyn
       // Mot de passe par défaut pour les employés
       data.password = 'employe123';
     }
+    const plainPassword = String(data.password || '').trim();
 
     const created = await employeModel.create(data);
     if (!created.matricule) {
@@ -3837,7 +3847,26 @@ app.post('/api/admin/employes', validateToken, requireRoleManagementAccess, asyn
         created.matricule = generatedMatricule;
       }
     }
-    res.status(201).json(mapEmployeForApi(created));
+    if (shouldSendCredentialsEmail) {
+      credentialsEmail.attempted = true;
+      try {
+        await sendCredentialsEmail({
+          to: String(data.email || '').trim(),
+          recipientName: `${String(data.prenom || '').trim()} ${String(data.nom || '').trim()}`.trim(),
+          loginEmail: String(data.email || '').trim(),
+          password: plainPassword,
+          roleLabel: String(data.role || 'employe').trim()
+        });
+        credentialsEmail.sent = true;
+      } catch (mailError) {
+        console.error('Erreur envoi email identifiants employe:', mailError);
+        credentialsEmail.error = String(mailError?.message || mailError);
+      }
+    }
+    res.status(201).json({
+      ...(mapEmployeForApi(created) || {}),
+      credentials_email: credentialsEmail
+    });
   } catch (error) {
     const mappedError = mapPrismaMutationError(error);
     if (mappedError) {
@@ -3986,7 +4015,7 @@ app.get('/api/get_employes', validateToken, async (req, res) => {
   }
 });
 
-app.get('/api/get_admins', validateToken, async (req, res) => {
+app.get('/api/get_admins', validateToken, requireSuperAdmin, async (req, res) => {
   try {
     const admins = await adminModel.getAll();
     const mappedAdmins = await Promise.all(admins.map((admin) => mapAdminForApi(admin)));
@@ -4045,6 +4074,8 @@ app.get('/api/employes', validateToken, async (req, res) => {
 
 app.post('/api/employes', validateToken, requireRoleManagementAccess, async (req, res) => {
   try {
+    const shouldSendCredentialsEmail = normalizeBooleanSetting(req.body?.sendEmail, true);
+    const credentialsEmail = { attempted: false, sent: false, error: null };
     const normalizedPayload = normalizeEmployeMutationPayload(req.body || {}, {
       allowProfessional: true,
       allowRole: true
@@ -4064,6 +4095,7 @@ app.post('/api/employes', validateToken, requireRoleManagementAccess, async (req
     }
 
     if (!data.password) data.password = 'XpertPro2026';
+    const plainPassword = String(data.password || '').trim();
     const employe = await employeModel.create(data);
     if (!employe.matricule) {
       const generatedMatricule = await ensureEmployeMatriculeById(employe.id);
@@ -4071,7 +4103,23 @@ app.post('/api/employes', validateToken, requireRoleManagementAccess, async (req
         employe.matricule = generatedMatricule;
       }
     }
-    res.status(201).json({ success: true, employe: mapEmployeForApi(employe) });
+    if (shouldSendCredentialsEmail) {
+      credentialsEmail.attempted = true;
+      try {
+        await sendCredentialsEmail({
+          to: String(data.email || '').trim(),
+          recipientName: `${String(data.prenom || '').trim()} ${String(data.nom || '').trim()}`.trim(),
+          loginEmail: String(data.email || '').trim(),
+          password: plainPassword,
+          roleLabel: String(data.role || 'employe').trim()
+        });
+        credentialsEmail.sent = true;
+      } catch (mailError) {
+        console.error('Erreur envoi email identifiants employe:', mailError);
+        credentialsEmail.error = String(mailError?.message || mailError);
+      }
+    }
+    res.status(201).json({ success: true, employe: mapEmployeForApi(employe), credentials_email: credentialsEmail });
   } catch (error) {
     const mappedError = mapPrismaMutationError(error);
     if (mappedError) {
@@ -4242,31 +4290,10 @@ app.post('/api/pointages/auto-depart', validateToken, async (req, res) => {
   }
 });
 
-// === GESTION DE LA SÉCURITÉ DE SCAN ===
-
-// Initialisation du stockage des sessions en mémoire
-global.scanSessions = global.scanSessions || [];
-
-// Initialisation du stockage des codes PIN par défaut
-global.scanPINs = global.scanPINs || {
-  // Code PIN par défaut pour tous les admins
-  default: '1234',
-  // Codes PIN personnalisés par admin ID
-  custom: {}
-};
-
-// Fonction pour obtenir le code PIN d'un admin
-function getAdminPIN(adminId) {
-  return global.scanPINs.custom[adminId] || global.scanPINs.default;
-}
-
-// Fonction pour définir le code PIN d'un admin
-function setAdminPIN(adminId, pin) {
-  if (!pin || !/^\d{4}$/.test(pin)) {
-    throw new Error('Le code PIN doit être composé de 4 chiffres');
-  }
-  global.scanPINs.custom[adminId] = pin;
-}
+ // Modèles Prisma pour la gestion des appareils et sessions
+ const scanDevice = prisma.scanDevice
+ const scanSession = prisma.scanSession
+ const DEFAULT_SCAN_PIN = '1234'
 
 // Endpoint pour vérifier si un appareil est enregistré
 app.post('/api/scan/device/check', validateToken, async (req, res) => {
@@ -4277,11 +4304,17 @@ app.post('/api/scan/device/check', validateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Fingerprint et userAgent requis' });
     }
 
-    // Pour l'instant, retourner non enregistré (pas de base de données)
+    const existingDevice = await scanDevice.findFirst({
+      where: {
+        fingerprint,
+        userAgent
+      }
+    });
+
     res.json({
       success: true,
-      registered: false,
-      device: null
+      registered: !!existingDevice,
+      device: existingDevice
     });
   } catch (error) {
     console.error('Erreur lors de la vérification de l\'appareil:', error);
@@ -4290,32 +4323,52 @@ app.post('/api/scan/device/check', validateToken, async (req, res) => {
 });
 
 // Endpoint pour enregistrer un nouvel appareil
-app.post('/api/scan/device/register', validateToken, async (req, res) => {
+ app.post('/api/scan/device/register', validateToken, async (req, res) => {
   try {
     const { fingerprint, userAgent, platform, type, name } = req.body;
-    const admin = req.user;
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
     
-    if (!fingerprint || !userAgent || !admin?.id) {
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    if (!fingerprint || !userAgent || !Number.isInteger(adminId) || adminId <= 0) {
       return res.status(400).json({ success: false, message: 'Informations requises manquantes' });
     }
 
-    // Pour l'instant, retourner un appareil fictif (pas de base de données)
-    const device = {
-      id: Date.now(),
-      fingerprint,
-      userAgent,
-      platform: platform || 'unknown',
-      type: type || 'unknown',
-      name: name || 'Appareil inconnu',
-      method: 'fingerprint',
-      trusted: false,
-      lastSeen: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    };
+    // Vérifier si l'appareil existe déjà
+    const existingDevice = await scanDevice.findFirst({
+      where: { fingerprint, adminId }
+    });
+
+    if (existingDevice) {
+      return res.json({
+        success: true,
+        device: existingDevice,
+        message: 'Appareil déjà enregistré'
+      });
+    }
+
+    // Créer le nouvel appareil
+    const newDevice = await scanDevice.create({
+      data: {
+        fingerprint,
+        userAgent,
+        platform: platform || 'unknown',
+        type: type || 'unknown',
+        name: name || 'Appareil inconnu',
+        adminId,
+        trusted: false,
+        lastSeen: new Date()
+      }
+    });
 
     res.json({
       success: true,
-      device: device,
+      device: newDevice,
       message: 'Appareil enregistré avec succès'
     });
   } catch (error) {
@@ -4327,99 +4380,176 @@ app.post('/api/scan/device/register', validateToken, async (req, res) => {
 // Endpoint pour demander le déverrouillage
 app.post('/api/scan/unlock/request', validateToken, async (req, res) => {
   try {
-    const { method, value, deviceInfo, timestamp, deviceName, duration = 60 } = req.body;
-    const admin = req.user;
-    
-    // Le super_admin peut déverrouiller sans code PIN ni token
-    if (admin?.role === 'super_admin' && (!method || method === 'admin_override')) {
-      console.log('Super_admin détecté, déverrouillage automatique de la zone de scan');
-      
-      // Créer une session de déverrouillage pour le super_admin
-      const sessionData = {
-        id: `admin_session_${Date.now()}`,
-        deviceId: 'admin_override',
-        adminId: admin.id,
-        method: 'admin_override',
-        deviceInfo: JSON.stringify({ adminName: `${admin.prenom} ${admin.nom}` }),
-        unlockedAt: new Date(),
-        expiresAt: new Date(Date.now() + duration * 60 * 1000),
-        active: true
-      };
+    const { method, value, deviceInfo, timestamp, deviceName } = req.body || {};
+    const rawDuration = req.body?.duration ?? req.body?.duration_minutes ?? 60;
 
-      // Stocker la session en mémoire (temporaire)
-      global.scanSessions = global.scanSessions || [];
-      global.scanSessions.push(sessionData);
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
 
-      return res.json({
-        success: true,
-        message: 'Zone de scan déverrouillée par super_admin',
-        session: {
-          id: sessionData.id,
-          expiresAt: sessionData.expiresAt,
-          method: 'admin_override'
-        }
-      });
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
     }
 
-    // Pour les autres méthodes, utiliser une approche simplifiée
+    if (!Number.isInteger(adminId) || adminId <= 0) {
+      return res.status(401).json({ success: false, message: 'Session invalide' });
+    }
+
+    const normalizedMethod = String(method || '').trim().toLowerCase() || 'pin';
+    const unlockValue = String(value || '').trim();
+    const durationMinutesRaw = Number.parseInt(String(rawDuration ?? 60).trim(), 10);
+    const durationMinutes = Number.isInteger(durationMinutesRaw)
+      ? Math.max(5, Math.min(durationMinutesRaw, 8 * 60))
+      : 60;
+
+    const effectiveDeviceInfo = deviceInfo && typeof deviceInfo === 'object' ? deviceInfo : null;
+    if (!effectiveDeviceInfo) {
+      return res.status(400).json({ success: false, message: 'Informations requises manquantes' });
+    }
+
+    // Autoriser super_admin sans PIN si méthode admin_override
+    const role = normalizeRole(admin?.role);
+    if (normalizedMethod === 'admin_override') {
+      if (role !== 'super_admin') {
+        return res.status(403).json({ success: false, message: 'Acces reserve au super_admin' });
+      }
+    } else if (!unlockValue) {
+      return res.status(400).json({ success: false, message: 'Informations requises manquantes' });
+    }
+
     let isValid = false;
 
-    switch (method) {
-      case 'pin':
-        // Vérifier le code PIN avec le système par défaut
-        const adminPIN = getAdminPIN(admin.id);
-        isValid = value === adminPIN;
-        console.log(`Vérification PIN: ${value} === ${adminPIN} = ${isValid}`);
+    switch (normalizedMethod) {
+      case 'admin_override':
+        isValid = role === 'super_admin';
         break;
-      
+
+      case 'pin': {
+        if (!/^[0-9]{4}$/.test(unlockValue)) {
+          isValid = false;
+          break;
+        }
+
+        const pinParam = await prisma.parametreUtilisateur.findFirst({
+          where: {
+            userId: adminId,
+            userType: 'admin',
+            cle: 'scan_pin_code'
+          }
+        });
+
+        if (!pinParam?.valeur) {
+          isValid = unlockValue === DEFAULT_SCAN_PIN;
+          break;
+        }
+
+        const bcrypt = require('bcrypt');
+        isValid = await bcrypt.compare(unlockValue, String(pinParam.valeur || ''));
+        break;
+      }
+
+      case 'token': {
+        const tokenParam = await prisma.parametreUtilisateur.findFirst({
+          where: {
+            userId: adminId,
+            userType: 'admin',
+            cle: 'scan_unlock_token'
+          }
+        });
+        isValid = Boolean(tokenParam?.valeur) && unlockValue === String(tokenParam.valeur || '');
+        break;
+      }
+
+      case 'ip':
+        // À affiner si besoin: pour l'instant on autorise.
+        isValid = true;
+        break;
+
       case 'mac':
-        // Vérifier si l'adresse MAC est autorisée (temporaire: accepter le format)
-        isValid = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(value);
+        // À affiner si besoin: pour l'instant on autorise.
+        isValid = true;
         break;
-      
-      case 'fingerprint':
-        // Vérifier l'empreinte de l'appareil
-        isValid = value && value.length > 10; // Validation simple
-        break;
-      
-      case 'token':
-        // Vérifier le token de sécurité
-        isValid = value === 'SCAN_UNLOCK_TOKEN'; // Token par défaut à personnaliser
-        break;
-      
+
       default:
         return res.status(400).json({ success: false, message: 'Méthode de déverrouillage non supportée' });
     }
 
     if (!isValid) {
-      return res.status(403).json({ success: false, message: 'Déverrouillage non autorisé' });
+      return res.status(403).json({ success: false, message: 'Code psin incorrect Code pin incorrect déverrouillage non autorisé' });
     }
 
-    // Créer une session de déverrouillage
-    const sessionData = {
-      id: `session_${Date.now()}`,
-      deviceId: deviceInfo.fingerprint || 'unknown',
-      adminId: admin.id,
-      method: method,
-      deviceInfo: JSON.stringify(deviceInfo),
-      unlockedAt: new Date(),
-      expiresAt: new Date(Date.now() + duration * 60 * 1000),
-      active: true
-    };
+    const fingerprintSeed = String(effectiveDeviceInfo?.fingerprint || effectiveDeviceInfo?.id || '').trim()
+      || `device-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+    const fingerprint = `${adminId}:${fingerprintSeed}`;
+    const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
 
-    // Stocker la session en mémoire
-    global.scanSessions = global.scanSessions || [];
-    global.scanSessions.push(sessionData);
+    let sessionPayload = null;
 
-    res.json({
+    // La persistance en base est optionnelle (certaines instances n'ont pas encore les tables de scan).
+    try {
+      const deviceRecord = await scanDevice.upsert({
+        where: {
+          fingerprint_method: {
+            fingerprint,
+            method: 'fingerprint'
+          }
+        },
+        update: {
+          lastSeen: new Date(),
+          userAgent: String(effectiveDeviceInfo?.userAgent || req.get('user-agent') || '') || null,
+          platform: String(effectiveDeviceInfo?.platform || '') || null,
+          type: String(effectiveDeviceInfo?.type || 'web'),
+          name: String(deviceName || effectiveDeviceInfo?.name || 'Appareil Web'),
+          adminId
+        },
+        create: {
+          fingerprint,
+          method: 'fingerprint',
+          userAgent: String(effectiveDeviceInfo?.userAgent || req.get('user-agent') || '') || null,
+          platform: String(effectiveDeviceInfo?.platform || '') || null,
+          type: String(effectiveDeviceInfo?.type || 'web'),
+          name: String(deviceName || effectiveDeviceInfo?.name || 'Appareil Web'),
+          adminId,
+          trusted: false,
+          lastSeen: new Date()
+        }
+      });
+
+      const session = await scanSession.create({
+        data: {
+          deviceId: deviceRecord.id,
+          adminId,
+          adminName: `${String(admin?.prenom || '').trim()} ${String(admin?.nom || '').trim()}`.trim() || 'Admin',
+          method: normalizedMethod,
+          deviceInfo: JSON.stringify({
+            ...(effectiveDeviceInfo || {}),
+            deviceName: deviceName || effectiveDeviceInfo?.name || null,
+            requestedAt: timestamp || new Date().toISOString()
+          }),
+          expiresAt,
+          active: true
+        }
+      });
+
+      sessionPayload = {
+        id: session.id,
+        expiresAt: session.expiresAt.toISOString(),
+        method: session.method
+      };
+    } catch (dbError) {
+      console.error('Erreur persistance session scan (fallback local):', dbError);
+      sessionPayload = {
+        id: `local_scan_${Date.now()}`,
+        expiresAt: expiresAt.toISOString(),
+        method: normalizedMethod
+      };
+    }
+
+    return res.json({
       success: true,
-      message: 'Zone de scan déverrouillée avec succès',
-      session: {
-        id: sessionData.id,
-        expiresAt: sessionData.expiresAt,
-        method: method,
-        deviceInfo: JSON.parse(sessionData.deviceInfo)
-      }
+      session: sessionPayload,
+      message: 'Zone de scan déverrouillée avec succès'
     });
   } catch (error) {
     console.error('Erreur lors de la demande de déverrouillage:', error);
@@ -4428,17 +4558,23 @@ app.post('/api/scan/unlock/request', validateToken, async (req, res) => {
 });
 
 // Endpoint pour valider une session
-app.get('/api/scan/session/:sessionId/validate', validateToken, async (req, res) => {
+ app.get('/api/scan/session/:sessionId/validate', validateToken, async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    const sessionId = Number.parseInt(String(req.params?.sessionId || '').trim(), 10);
     
-    if (!sessionId) {
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
       return res.status(400).json({ success: false, message: 'ID de session requis' });
     }
 
-    // Valider la session en mémoire
-    const sessions = global.scanSessions || [];
-    const session = sessions.find(s => s.id === sessionId && s.active);
+    const session = await scanSession.findFirst({
+      where: {
+        id: sessionId,
+        active: true
+      },
+      include: {
+        device: true
+      }
+    });
 
     if (!session) {
       return res.json({ valid: false, message: 'Session non trouvée ou inactive' });
@@ -4446,7 +4582,10 @@ app.get('/api/scan/session/:sessionId/validate', validateToken, async (req, res)
 
     // Vérifier si la session n'est pas expirée
     if (new Date() > new Date(session.expiresAt)) {
-      session.active = false;
+      await scanSession.update({
+        where: { id: sessionId },
+        data: { active: false }
+      });
       return res.json({ valid: false, message: 'Session expirée' });
     }
 
@@ -4457,10 +4596,23 @@ app.get('/api/scan/session/:sessionId/validate', validateToken, async (req, res)
         deviceId: session.deviceId,
         adminId: session.adminId,
         adminName: session.adminName,
+        expiresAt: session.expiresAt.toISOString(),
+        active: session.active,
         method: session.method,
-        deviceInfo: JSON.parse(session.deviceInfo),
-        expiresAt: session.expiresAt,
-        isActive: session.active
+        deviceInfo: session.deviceInfo,
+        device: session.device
+          ? {
+            id: session.device.id,
+            name: session.device.name,
+            type: session.device.type,
+            userAgent: session.device.userAgent,
+            platform: session.device.platform,
+            fingerprint: session.device.fingerprint,
+            trusted: session.device.trusted,
+            lastSeen: session.device.lastSeen.toISOString(),
+            createdAt: session.device.createdAt.toISOString()
+          }
+          : null
       }
     });
   } catch (error) {
@@ -4472,23 +4624,41 @@ app.get('/api/scan/session/:sessionId/validate', validateToken, async (req, res)
 // Endpoint pour verrouiller une session
 app.post('/api/scan/session/:sessionId/lock', validateToken, async (req, res) => {
   try {
-    const { sessionId } = req.params;
-    const admin = req.user;
+    const sessionId = Number.parseInt(String(req.params?.sessionId || '').trim(), 10);
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
     
-    if (!sessionId) {
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    if (!Number.isInteger(adminId) || adminId <= 0) {
+      return res.status(401).json({ success: false, message: 'Session invalide' });
+    }
+
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
       return res.status(400).json({ success: false, message: 'ID de session requis' });
     }
 
-    // Valider la session en mémoire
-    const sessions = global.scanSessions || [];
-    const sessionIndex = sessions.findIndex(s => s.id === sessionId && s.adminId === admin.id);
+    const session = await scanSession.findFirst({
+      where: { id: sessionId }
+    });
 
-    if (sessionIndex === -1) {
-      return res.status(404).json({ success: false, message: 'Session non trouvée ou non autorisée' });
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session non trouvée' });
     }
 
-    // Désactiver la session
-    sessions[sessionIndex].active = false;
+    // Vérifier que l'admin est le propriétaire de la session
+    if (session.adminId !== adminId) {
+      return res.status(403).json({ success: false, message: 'Non autorisé' });
+    }
+
+    await scanSession.update({
+      where: { id: sessionId },
+      data: { active: false }
+    });
 
     res.json({
       success: true,
@@ -4503,30 +4673,53 @@ app.post('/api/scan/session/:sessionId/lock', validateToken, async (req, res) =>
 // Endpoint pour prolonger une session
 app.post('/api/scan/session/:sessionId/extend', validateToken, async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    const sessionId = Number.parseInt(String(req.params?.sessionId || '').trim(), 10);
     const { duration = 60 } = req.body;
-    const admin = req.user;
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
     
-    if (!sessionId) {
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    if (!Number.isInteger(adminId) || adminId <= 0) {
+      return res.status(401).json({ success: false, message: 'Session invalide' });
+    }
+
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
       return res.status(400).json({ success: false, message: 'ID de session requis' });
     }
 
-    // Valider la session en mémoire
-    const sessions = global.scanSessions || [];
-    const sessionIndex = sessions.findIndex(s => s.id === sessionId && s.adminId === admin.id && s.active);
+    const session = await scanSession.findFirst({
+      where: { 
+        id: sessionId,
+        active: true 
+      }
+    });
 
-    if (sessionIndex === -1) {
+    if (!session) {
       return res.status(404).json({ success: false, message: 'Session non trouvée ou inactive' });
+    }
+
+    // Vérifier que l'admin est le propriétaire de la session
+    if (session.adminId !== adminId) {
+      return res.status(403).json({ success: false, message: 'Non autorisé' });
     }
 
     // Prolonger la session
     const newExpiresAt = new Date();
     newExpiresAt.setMinutes(newExpiresAt.getMinutes() + duration);
-    sessions[sessionIndex].expiresAt = newExpiresAt;
+
+    const updatedSession = await scanSession.update({
+      where: { id: sessionId },
+      data: { expiresAt: newExpiresAt }
+    });
 
     res.json({
       success: true,
-      expiresAt: newExpiresAt.toISOString(),
+      expiresAt: updatedSession.expiresAt.toISOString(),
       message: 'Session prolongée avec succès'
     });
   } catch (error) {
@@ -4535,18 +4728,344 @@ app.post('/api/scan/session/:sessionId/extend', validateToken, async (req, res) 
   }
 });
 
-// Endpoint pour obtenir la liste des appareils enregistrés
+// Endpoint pour gérer les méthodes de déverrouillage de scan
+app.post('/api/admin/scan-security/update', validateToken, async (req, res) => {
+  try {
+    const admin = req.user;
+    const { pinCode, unlockToken, deviceMac, deviceFingerprint } = req.body;
+    
+    if (!admin?.id) {
+      return res.status(400).json({ success: false, message: 'Admin non identifié' });
+    }
+
+    // Pour l'instant, stocker dans les paramètres utilisateur
+    const updates = {};
+    
+    if (pinCode && pinCode.length === 6) {
+      // Stocker le code PIN hashé
+      const bcrypt = require('bcrypt');
+      const hashedPin = await bcrypt.hash(pinCode, 10);
+      updates.scan_pin_code = hashedPin;
+    }
+    
+    if (unlockToken && unlockToken.length >= 8) {
+      updates.scan_unlock_token = unlockToken;
+    }
+    
+    if (deviceMac) {
+      updates.device_mac = deviceMac;
+    }
+    
+    if (deviceFingerprint) {
+      updates.device_fingerprint = deviceFingerprint;
+    }
+
+    // Mettre à jour les paramètres de l'admin
+    if (Object.keys(updates).length > 0) {
+      // Utiliser une table de paramètres pour stocker ces valeurs
+      for (const [key, value] of Object.entries(updates)) {
+        await prisma.parametreUtilisateur.upsert({
+          where: {
+            userId_cle: {
+              userId: admin.id,
+              cle: key
+            }
+          },
+          update: { valeur: String(value) },
+          create: {
+            userId: admin.id,
+            userType: 'admin',
+            cle: key,
+            valeur: String(value)
+          }
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Méthodes de déverrouillage mises à jour avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour des méthodes de déverrouillage:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Endpoint pour récupérer les méthodes de déverrouillage
+app.get('/api/admin/scan-security', validateToken, async (req, res) => {
+  try {
+    const admin = req.user;
+    
+    if (!admin?.id) {
+      return res.status(400).json({ success: false, message: 'Admin non identifié' });
+    }
+
+    // Récupérer les paramètres de sécurité
+    const securityParams = await prisma.parametreUtilisateur.findMany({
+      where: {
+        userId: admin.id,
+        userType: 'admin',
+        cle: {
+          in: ['scan_pin_code', 'scan_unlock_token', 'device_mac', 'device_fingerprint']
+        }
+      }
+    });
+
+    const securityData = {};
+    securityParams.forEach(param => {
+      securityData[param.cle] = param.valeur;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        pinCode: securityData.scan_pin_code ? '****' : null, // Masquer le PIN réel
+        unlockToken: securityData.scan_unlock_token || null,
+        deviceMac: securityData.device_mac || null,
+        deviceFingerprint: securityData.device_fingerprint || null,
+        hasPinCode: !!securityData.scan_pin_code,
+        hasUnlockToken: !!securityData.scan_unlock_token
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des méthodes de déverrouillage:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Endpoint pour vérifier le code PIN
+app.post('/api/admin/scan-security/verify-pin', validateToken, async (req, res) => {
+  try {
+    const admin = req.user;
+    const { pinCode } = req.body;
+    
+    if (!admin?.id || !pinCode) {
+      return res.status(400).json({ success: false, message: 'PIN requis' });
+    }
+
+    // Récupérer le PIN hashé
+    const pinParam = await prisma.parametreUtilisateur.findFirst({
+      where: {
+        userId: admin.id,
+        userType: 'admin',
+        cle: 'scan_pin_code'
+      }
+    });
+
+    if (!pinParam) {
+      return res.status(404).json({ success: false, message: 'Aucun code PIN configuré' });
+    }
+
+    // Vérifier le PIN
+    const bcrypt = require('bcrypt');
+    const isValid = await bcrypt.compare(pinCode, pinParam.valeur);
+
+    if (isValid) {
+      res.json({ success: true, message: 'PIN vérifié avec succès' });
+    } else {
+      res.status(401).json({ success: false, message: 'PIN incorrect' });
+    }
+  } catch (error) {
+    console.error('Erreur lors de la vérification du PIN:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Endpoint pour obtenir le PIN de scan actuel
+app.get('/api/scan/pin', validateToken, async (req, res) => {
+  try {
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
+
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    if (!Number.isInteger(adminId) || adminId <= 0) {
+      return res.status(401).json({ success: false, message: 'Session invalide' });
+    }
+
+    const pinParam = await prisma.parametreUtilisateur.findFirst({
+      where: {
+        userId: adminId,
+        userType: 'admin',
+        cle: 'scan_pin_code'
+      }
+    });
+
+    if (!pinParam?.valeur) {
+      return res.json({ success: true, pin: DEFAULT_SCAN_PIN, isDefault: true });
+    }
+
+    return res.json({ success: true, pin: '****', isDefault: false });
+  } catch (error) {
+    console.error('Erreur lors de la récupération du PIN:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Endpoint pour modifier le PIN de scan
+app.put('/api/scan/pin', validateToken, async (req, res) => {
+  try {
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
+
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    if (!Number.isInteger(adminId) || adminId <= 0) {
+      return res.status(401).json({ success: false, message: 'Session invalide' });
+    }
+
+    const currentPin = String(req.body?.currentPin || '').trim();
+    const newPin = String(req.body?.newPin || '').trim();
+
+    if (!/^[0-9]{4}$/.test(newPin)) {
+      return res.status(400).json({ success: false, message: 'Le PIN doit être composé de 4 chiffres' });
+    }
+
+    const pinParam = await prisma.parametreUtilisateur.findFirst({
+      where: {
+        userId: adminId,
+        userType: 'admin',
+        cle: 'scan_pin_code'
+      }
+    });
+
+    let currentMatches = false;
+    if (!pinParam?.valeur) {
+      currentMatches = currentPin === DEFAULT_SCAN_PIN;
+    } else {
+      if (!/^[0-9]{4}$/.test(currentPin)) {
+        return res.status(400).json({ success: false, message: 'PIN actuel requis pour la modification' });
+      }
+      const bcrypt = require('bcrypt');
+      currentMatches = await bcrypt.compare(currentPin, String(pinParam.valeur || ''));
+    }
+
+    if (!currentMatches) {
+      return res.status(401).json({ success: false, message: 'PIN actuel incorrect' });
+    }
+
+    // Revenir au PIN par défaut: on supprime le paramètre custom.
+    if (newPin === DEFAULT_SCAN_PIN) {
+      await prisma.parametreUtilisateur.deleteMany({
+        where: {
+          userId: adminId,
+          userType: 'admin',
+          cle: 'scan_pin_code'
+        }
+      });
+      return res.json({ success: true, message: 'PIN réinitialisé au défaut' });
+    }
+
+    const bcrypt = require('bcrypt');
+    const hashedPin = await bcrypt.hash(newPin, 10);
+
+    await prisma.parametreUtilisateur.upsert({
+      where: {
+        userId_cle: {
+          userId: adminId,
+          cle: 'scan_pin_code'
+        }
+      },
+      update: { valeur: hashedPin, userType: 'admin' },
+      create: {
+        userId: adminId,
+        userType: 'admin',
+        cle: 'scan_pin_code',
+        valeur: hashedPin
+      }
+    });
+
+    return res.json({ success: true, message: 'PIN modifié avec succès' });
+  } catch (error) {
+    console.error('Erreur lors de la modification du PIN:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Endpoint pour réinitialiser le PIN de scan
+app.post('/api/scan/pin/reset', validateToken, async (req, res) => {
+  try {
+    const tokenPayload = req.user || {};
+    const tokenUserType = String(tokenPayload.userType || '').trim().toLowerCase();
+    const admin = tokenPayload.user || tokenPayload;
+    const adminId = Number(admin?.id || 0);
+
+    if (tokenUserType && tokenUserType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    if (!Number.isInteger(adminId) || adminId <= 0) {
+      return res.status(401).json({ success: false, message: 'Session invalide' });
+    }
+
+    await prisma.parametreUtilisateur.deleteMany({
+      where: {
+        userId: adminId,
+        userType: 'admin',
+        cle: 'scan_pin_code'
+      }
+    });
+
+    return res.json({ success: true, message: 'PIN réinitialisé avec succès' });
+  } catch (error) {
+    console.error('Erreur lors de la réinitialisation du PIN:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 app.get('/api/scan/devices', validateToken, async (req, res) => {
   try {
     const admin = req.user;
     
-    // Retourner une liste vide pour l'instant (pas de base de données)
-    const devices = [];
-    
-    res.json({
-      success: true,
-      devices: devices
+    if (!admin?.id) {
+      return res.status(401).json({ success: false, message: 'Admin non authentifié' });
+    }
+
+    const devices = await prisma.badgeScan.findMany({
+      orderBy: { scanTime: 'desc' }
     });
+    
+    const formattedDevices = devices.map(device => ({
+      id: device.id,
+      name: `Appareil ${device.id}`, // Nom générique
+      type: device.scanType || 'unknown',
+      userAgent: device.deviceInfo || 'unknown',
+      fingerprint: device.tokenHash || 'unknown',
+      ipAddress: device.ipAddress || 'unknown',
+      isValid: device.isValid || false,
+      lastSeen: device.scanTime,
+      scanTime: device.scanTime,
+      validationDetails: device.validationDetails || null,
+      // Champs additionnels avec valeurs par défaut
+      latitude: device.latitude || null,
+      longitude: device.longitude || null,
+      deviceId: device.tokenId ? `token_${device.tokenId}` : 'unknown',
+      tokenHash: device.tokenHash || null,
+      scanType: device.scanType || 'unknown',
+      token: device.token ? {
+        id: device.token.id,
+        employeId: device.token.employeId,
+        token: device.token.token,
+        tokenHash: device.token.tokenHash,
+        createdAt: device.token.createdAt,
+        expiresAt: device.token.expiresAt,
+        ipAddress: device.token.ipAddress,
+        userAgent: device.token.userAgent,
+        deviceInfo: device.token.deviceInfo,
+        status: device.token.status
+      } : null
+    }));
+    
+    res.json({ success: true, devices: formattedDevices });
   } catch (error) {
     console.error('Erreur lors de la récupération des appareils:', error);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
@@ -4563,83 +5082,25 @@ app.delete('/api/scan/device/:deviceId', validateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: 'ID d\'appareil requis' });
     }
 
-    // Pour l'instant, retourner succès (pas de base de données)
+    const device = await prisma.badgeScan.findFirst({
+      where: { id: deviceId }
+    });
+
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Appareil non trouvé' });
+    }
+
+    // Supprimer l'appareil (pas de vérification adminId car BadgeScan n'a pas ce champ)
+    await prisma.badgeScan.delete({
+      where: { id: deviceId }
+    });
+
     res.json({
       success: true,
       message: 'Appareil révoqué avec succès'
     });
   } catch (error) {
     console.error('Erreur lors de la révocation de l\'appareil:', error);
-    res.status(500).json({ success: false, message: 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour obtenir le code PIN actuel de l'admin
-app.get('/api/scan/pin', validateToken, async (req, res) => {
-  try {
-    const admin = req.user;
-    const currentPIN = getAdminPIN(admin.id);
-    
-    res.json({
-      success: true,
-      pin: currentPIN,
-      isDefault: currentPIN === global.scanPINs.default
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération du code PIN:', error);
-    res.status(500).json({ success: false, message: 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour modifier le code PIN de l'admin
-app.put('/api/scan/pin', validateToken, async (req, res) => {
-  try {
-    const { newPin, currentPin } = req.body;
-    const admin = req.user;
-    
-    if (!newPin || !currentPin) {
-      return res.status(400).json({ success: false, message: 'Code PIN actuel et nouveau requis' });
-    }
-    
-    if (!/^\d{4}$/.test(newPin)) {
-      return res.status(400).json({ success: false, message: 'Le nouveau code PIN doit être composé de 4 chiffres' });
-    }
-    
-    // Vérifier le code PIN actuel
-    const currentAdminPIN = getAdminPIN(admin.id);
-    if (currentPin !== currentAdminPIN) {
-      return res.status(403).json({ success: false, message: 'Code PIN actuel incorrect' });
-    }
-    
-    // Définir le nouveau code PIN
-    setAdminPIN(admin.id, newPin);
-    
-    res.json({
-      success: true,
-      message: 'Code PIN modifié avec succès',
-      newPin: newPin
-    });
-  } catch (error) {
-    console.error('Erreur lors de la modification du code PIN:', error);
-    res.status(500).json({ success: false, message: error.message || 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour réinitialiser le code PIN à la valeur par défaut
-app.post('/api/scan/pin/reset', validateToken, async (req, res) => {
-  try {
-    const admin = req.user;
-    
-    // Supprimer le code PIN personnalisé
-    delete global.scanPINs.custom[admin.id];
-    
-    res.json({
-      success: true,
-      message: 'Code PIN réinitialisé à la valeur par défaut',
-      newPin: global.scanPINs.default
-    });
-  } catch (error) {
-    console.error('Erreur lors de la réinitialisation du code PIN:', error);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
 });
@@ -4816,6 +5277,29 @@ app.get('/api/get_demandes', validateToken, async (req, res) => {
       take: perPage
     });
 
+    const traiterAdminIds = Array.from(
+      new Set(
+        items
+          .map((item) => Number(item?.traitePar || 0))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      )
+    );
+    const traiteParAdmins = traiterAdminIds.length > 0
+      ? await prisma.admin.findMany({
+        where: { id: { in: traiterAdminIds } },
+        select: { id: true, prenom: true, nom: true, role: true }
+      })
+      : [];
+    const traiteParById = new Map(
+      traiteParAdmins.map((admin) => [
+        admin.id,
+        {
+          nom: buildDisplayName(admin.prenom, admin.nom),
+          role: String(admin.role || '').trim()
+        }
+      ])
+    );
+
     const statsRaw = await prisma.demande.groupBy({
       by: ['statut'],
       where,
@@ -4895,6 +5379,8 @@ app.get('/api/get_demandes', validateToken, async (req, res) => {
         ? rawCommentaire.split('\n').slice(1).join('\n').trim()
         : rawCommentaire;
       const rawStatut = String(demande.statut || '').toLowerCase();
+      const traiteParId = Number(demande.traitePar || 0);
+      const traiteParInfo = traiteParId > 0 ? traiteParById.get(traiteParId) : null;
 
       const fallbackMatricule = demande.employe?.id || demande.employeId
         ? buildMatriculeFromIdentity({
@@ -4937,6 +5423,8 @@ app.get('/api/get_demandes', validateToken, async (req, res) => {
             : 'en_attente',
         commentaire,
         traite_par: demande.traitePar || null,
+        traite_par_nom: traiteParInfo?.nom || null,
+        traite_par_role: traiteParInfo?.role || null,
         date_traitement: demande.dateTraitement || null,
         heures_ecoulees: null,
         photo: normalizePhotoPath(demande.employe?.photo)
@@ -4972,9 +5460,18 @@ const hasBadgeExpiredOrRegeneratedToday = async (employeId, referenceDate = new 
     // Vérifier si le badge a expiré aujourd'hui
     const expiredBadges = await prisma.badgeScan.findMany({
       where: {
-        employeId: normalizedEmployeId,
-        scanResult: 'expired',
-        createdAt: { gte: startOfDay, lte: endOfDay }
+        token: {
+          employeId: normalizedEmployeId,
+          expiresAt: { lte: endOfDay }
+        },
+        scanTime: { gte: startOfDay, lte: endOfDay }
+      },
+      include: {
+        token: {
+          include: {
+            employe: true
+          }
+        }
       }
     });
 
@@ -6400,7 +6897,7 @@ const computePauseStatusFromPointages = ({
 
 const MINIMUM_WORK_DURATION_MINUTES = 4 * 60;
 const SECOND_SCAN_MODAL_CUTOFF = '18:00';
-const JUSTIFICATION_MIN_LENGTH = 5;
+const JUSTIFICATION_MIN_LENGTH = 3;
 
 const normalizeJustificationText = (value) => String(value || '').trim();
 
@@ -6412,7 +6909,8 @@ const isJustificationRequiredForPointage = ({
   const normalized = String(pointageType || '').trim().toLowerCase();
   if (normalized === 'pause_debut') return true;
   if (normalized === 'depart' && Number(departAnticipeMinutes) > 0) return true;
-  if (normalized === 'arrivee' && Number(retardMinutes) > 0) return true;
+  // Les retards ne nécessitent plus de justification obligatoire
+  if (normalized === 'arrivee' && Number(retardMinutes) > 0) return false;
   return false;
 };
 
@@ -6659,7 +7157,7 @@ app.get(
     '/api/scan/history'
   ],
   validateToken,
-  requireAuthenticatedSessionWithActiveBadge,
+  requireBadgeForEmployeOnly,
   async (req, res) => {
   try {
     const requesterType = String(req.user?.userType || '').trim().toLowerCase();
@@ -8513,6 +9011,31 @@ const resolveEmployeBadgeForView = async ({ employeId, requestedBy, ipAddress, u
   return token ? mapBadgeTokenForUi(token) : null;
 };
 
+const resolveAdminBadgeForView = async ({ adminId, requestedBy, ipAddress, userAgent }) => {
+  void requestedBy;
+  void ipAddress;
+  void userAgent;
+
+  const token = await prisma.badgeToken.findFirst({
+    where: { adminId },
+    include: { employe: true, admin: true },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  if (!token) {
+    const admin = await prisma.admin.findUnique({
+      where: { id: adminId },
+      select: { id: true }
+    });
+    if (!admin) {
+      return null;
+    }
+    return null;
+  }
+
+  return token ? mapBadgeTokenForUi(token) : null;
+};
+
 app.get('/api/employe/badge', validateToken, async (req, res) => {
   try {
     if (req.user?.userType !== 'employe') {
@@ -8555,6 +9078,28 @@ app.get('/api/badge/employe', validateToken, async (req, res) => {
   }
 });
 
+app.get('/api/admin/badge', validateToken, async (req, res) => {
+  try {
+    if (req.user?.userType !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Acces reserve aux administrateurs' });
+    }
+
+    const adminId = req.user.user.id;
+    res.json({
+      success: true,
+      badge: await resolveAdminBadgeForView({
+        adminId,
+        requestedBy: req.user?.user?.id,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent')
+      })
+    });
+  } catch (error) {
+    console.error('Erreur admin badge:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors du chargement du badge' });
+  }
+});
+
 app.get('/api/badge/employe/:id', validateToken, async (req, res) => {
   try {
     const requestedId = parseInt(req.params.id, 10);
@@ -8583,25 +9128,149 @@ app.get('/api/badge/employe/:id', validateToken, async (req, res) => {
 
 app.post('/api/badge/generate', validateToken, async (req, res) => {
   try {
-    return res.status(403).json({
-      success: false,
-      message: 'Regeneration de badge reservee aux administrateurs'
+    const admin = req.user;
+    
+    if (!admin?.id) {
+      return res.status(401).json({ success: false, message: 'Admin non authentifié' });
+    }
+
+    // Vérifier que l'utilisateur est admin ou super_admin
+    const role = String(admin.role || '').toLowerCase();
+    if (!['admin', 'super_admin'].includes(role)) {
+      return res.status(403).json({ success: false, message: 'Régénération de badge réservée aux administrateurs' });
+    }
+
+    // Récupérer l'admin avec son badge actuel
+    const adminData = await prisma.admin.findFirst({
+      where: { id: admin.id },
+      include: { badgeToken: true }
+    });
+
+    if (!adminData) {
+      return res.status(404).json({ success: false, message: 'Admin non trouvé' });
+    }
+
+    // Désactiver l'ancien badge s'il existe
+    if (adminData.badgeToken) {
+      await prisma.badgeToken.update({
+        where: { id: adminData.badgeToken.id },
+        data: { 
+          status: 'inactive',
+          expiresAt: new Date()
+        }
+      });
+    }
+
+    // Générer le nouveau badge
+    const newToken = generateSecureToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30); // Valide 30 jours
+
+    const newBadgeToken = await prisma.badgeToken.create({
+      data: {
+        employeId: admin.id,
+        token: newToken,
+        tokenHash: hashToken(newToken),
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        deviceInfo: JSON.stringify({
+          platform: req.get('user-agent'),
+          regeneratedAt: new Date().toISOString(),
+          regeneratedBy: 'admin'
+        }),
+        status: 'active',
+        createdAt: new Date(),
+        expiresAt
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Badge régénéré avec succès',
+      badge: {
+        id: newBadgeToken.id,
+        token: newToken,
+        expiresAt: newBadgeToken.expiresAt.toISOString(),
+        status: 'active'
+      }
     });
   } catch (error) {
     console.error('Erreur badge/generate:', error);
-    res.status(500).json({ success: false, message: 'Erreur lors de la regeneration du badge' });
+    res.status(500).json({ success: false, message: 'Erreur lors de la régénération du badge' });
   }
 });
 
 app.post('/api/employe/badge/regenerate', validateToken, async (req, res) => {
   try {
-    return res.status(403).json({
-      success: false,
-      message: 'Regeneration de badge reservee aux administrateurs'
+    const user = req.user;
+    
+    if (!user?.id) {
+      return res.status(401).json({ success: false, message: 'Utilisateur non authentifié' });
+    }
+
+    // Vérifier que l'utilisateur est un employé (pas admin)
+    const role = String(user.role || '').toLowerCase();
+    if (['admin', 'super_admin'].includes(role)) {
+      return res.status(403).json({ success: false, message: 'Utilisez /api/badge/generate pour les administrateurs' });
+    }
+
+    // Récupérer l'employé avec son badge actuel
+    const employeData = await prisma.employe.findFirst({
+      where: { id: user.id },
+      include: { badgeToken: true }
+    });
+
+    if (!employeData) {
+      return res.status(404).json({ success: false, message: 'Employé non trouvé' });
+    }
+
+    // Désactiver l'ancien badge s'il existe
+    if (employeData.badgeToken) {
+      await prisma.badgeToken.update({
+        where: { id: employeData.badgeToken.id },
+        data: { 
+          status: 'inactive',
+          expiresAt: new Date()
+        }
+      });
+    }
+
+    // Générer le nouveau badge
+    const newToken = generateSecureToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30); // Valide 30 jours
+
+    const newBadgeToken = await prisma.badgeToken.create({
+      data: {
+        employeId: user.id,
+        token: newToken,
+        tokenHash: hashToken(newToken),
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        deviceInfo: JSON.stringify({
+          platform: req.get('user-agent'),
+          regeneratedAt: new Date().toISOString(),
+          regeneratedBy: 'employe'
+        }),
+        status: 'active',
+        createdAt: new Date(),
+        expiresAt
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Badge régénéré avec succès',
+      badge: {
+        id: newBadgeToken.id,
+        token: newToken,
+        expiresAt: newBadgeToken.expiresAt.toISOString(),
+        status: 'active'
+      }
     });
   } catch (error) {
     console.error('Erreur employe badge regenerate:', error);
-    res.status(500).json({ success: false, message: 'Erreur lors de la regeneration du badge' });
+    res.status(500).json({ success: false, message: 'Erreur lors de la régénération du badge' });
   }
 });
 
@@ -8991,175 +9660,10 @@ app.post('/api/evenements', validateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// === GESTION DES MÉTHODES DE DÉVERROUILLAGE ===
-
-// Endpoint pour obtenir les méthodes de déverrouillage de l'admin
-app.get('/api/scan/unlock-methods', validateToken, async (req, res) => {
-  try {
-    const admin = req.user;
-    
-    // Retourner les méthodes disponibles avec le code PIN actuel
-    const currentPIN = getAdminPIN(admin.id);
-    const methods = [
-      {
-        id: 'pin_method',
-        method: 'pin',
-        value: currentPIN,
-        name: 'Code PIN',
-        type: 'pin',
-        trusted: true,
-        createdAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString()
-      }
-    ];
-
-    res.json({
-      success: true,
-      methods: methods
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération des méthodes de déverrouillage:', error);
-    res.status(500).json({ success: false, message: 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour ajouter une méthode de déverrouillage (redirection vers modification du PIN)
-app.post('/api/scan/unlock-methods', validateToken, async (req, res) => {
-  try {
-    const { method, value, name, type } = req.body;
-    const admin = req.user;
-    
-if (!method || !value || !name || !admin?.id) {
-      return res.status(400).json({ success: false, message: 'Informations requises manquantes' });
-    }
-
-    // Si c'est une méthode PIN, utiliser le système de PIN
-    if (method === 'pin') {
-      if (!/^\d{4}$/.test(value)) {
-        return res.status(400).json({ success: false, message: 'Le code PIN doit être composé de 4 chiffres' });
-      }
-      
-      setAdminPIN(admin.id, value);
-      
-      return res.status(201).json({
-        success: true,
-        method: {
-          id: 'pin_method',
-          method: 'pin',
-          value: value,
-          name: name,
-          type: 'pin',
-          trusted: true,
-          createdAt: new Date().toISOString()
-        },
-        message: 'Code PIN mis à jour avec succès'
-      });
-    }
-
-    // Pour les autres méthodes, retourner un message d'erreur pour l'instant
-    res.status(400).json({ 
-      success: false, 
-      message: 'Seule la méthode PIN est actuellement supportée' 
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'ajout de la méthode de déverrouillage:', error);
-    res.status(500).json({ success: false, message: error.message || 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour modifier une méthode de déverrouillage
-app.put('/api/scan/unlock-methods/:methodId', validateToken, async (req, res) => {
-  try {
-    const { methodId } = req.params;
-    const { method, value, name, type, trusted } = req.body;
-    const admin = req.user;
-    
-    if (!methodId || !method || !value || !name || !admin?.id) {
-      return res.status(400).json({ success: false, message: 'Informations requises manquantes' });
-    }
-
-    // Si c'est la méthode PIN
-    if (methodId === 'pin_method' && method === 'pin') {
-      if (!/^\d{4}$/.test(value)) {
-        return res.status(400).json({ success: false, message: 'Le code PIN doit être composé de 4 chiffres' });
-      }
-      
-      setAdminPIN(admin.id, value);
-      
-      return res.json({
-        success: true,
-        method: {
-          id: 'pin_method',
-          method: 'pin',
-          value: value,
-          name: name,
-          type: 'pin',
-          trusted: trusted !== undefined ? trusted : true,
-          createdAt: new Date().toISOString(),
-          lastSeen: new Date().toISOString()
-        },
-        message: 'Code PIN modifié avec succès'
-      });
-    }
-
-    res.status(404).json({ success: false, message: 'Méthode de déverrouillage non trouvée' });
-  } catch (error) {
-    console.error('Erreur lors de la modification de la méthode de déverrouillage:', error);
-    res.status(500).json({ success: false, message: error.message || 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour supprimer une méthode de déverrouillage
-app.delete('/api/scan/unlock-methods/:methodId', validateToken, async (req, res) => {
-  try {
-    const { methodId } = req.params;
-    const admin = req.user;
-    
-    if (!methodId) {
-      return res.status(400).json({ success: false, message: 'ID de méthode requis' });
-    }
-
-    // Si c'est la méthode PIN, réinitialiser à la valeur par défaut
-    if (methodId === 'pin_method') {
-      delete global.scanPINs.custom[admin.id];
-      
-      return res.json({
-        success: true,
-        message: 'Code PIN réinitialisé à la valeur par défaut'
-      });
-    }
-
-    res.status(404).json({ success: false, message: 'Méthode de déverrouillage non trouvée' });
-  } catch (error) {
-    console.error('Erreur lors de la suppression de la méthode de déverrouillage:', error);
-    res.status(500).json({ success: false, message: 'Erreur serveur' });
-  }
-});
-
-// Endpoint pour révoquer un appareil
-app.delete('/api/scan/device/:deviceId', validateToken, async (req, res) => {
-  try {
-    const { deviceId } = req.params;
-    const admin = req.user;
-    
-    if (!deviceId) {
-      return res.status(400).json({ success: false, message: 'ID d\'appareil requis' });
-    }
-
-    // Pour l'instant, retourner succès (pas de base de données)
-    res.json({
-      success: true,
-      message: 'Appareil révoqué avec succès'
-    });
-  } catch (error) {
-    console.error('Erreur lors de la révocation de l\'appareil:', error);
-    res.status(500).json({ success: false, message: 'Erreur serveur' });
-  }
-});
-
 const startServer = async () => {
   await ensureRoleEnumValues();
   await loadSupportedDbRoleValues();
+  
   try {
     await ensureAllEmployeMatricules();
   } catch (error) {
@@ -9183,6 +9687,9 @@ const startServer = async () => {
     console.warn('Verification regeneration badges au demarrage echouee:', error?.message || error);
   }
 
+  // Initialiser la base de données
+  await initializeDatabase();
+  
   app.listen(PORT, () => {
     console.log(`Serveur Xpert Pro demarre sur http://localhost:${PORT}`);
     console.log('Mode: PostgreSQL avec Prisma');
@@ -9191,8 +9698,50 @@ const startServer = async () => {
   });
 };
 
+// Fonction pour créer la table BadgeScan si elle n'existe pas
+const createBadgeScanTable = async () => {
+  try {
+    console.log('Vérification de la table badge_scans...');
+    
+    // Utiliser une requête SQL simple pour créer la table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS badge_scans (
+        id SERIAL PRIMARY KEY,
+        token_id INTEGER,
+        token_hash VARCHAR(128),
+        scan_time TIMESTAMP DEFAULT NOW(),
+        ip_address VARCHAR(45),
+        device_info TEXT,
+        is_valid BOOLEAN DEFAULT false,
+        validation_details JSON,
+        latitude DECIMAL(10,8),
+        longitude DECIMAL(11,8),
+        scan_type VARCHAR(50) DEFAULT 'unknown',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    
+    console.log('Table badge_scans vérifiée/créée');
+  } catch (error) {
+    console.error('Erreur lors de la création de la table badge_scans:', error);
+  }
+};
+
+// Initialiser la base de données au démarrage
+const initializeDatabase = async () => {
+  try {
+    console.log('Initialisation de la base de données...');
+    
+    // Créer la table BadgeScan si nécessaire
+    await createBadgeScanTable();
+    
+    console.log('Base de données initialisée avec succès');
+  } catch (error) {
+    console.error('Erreur lors de l\'initialisation de la base de données:', error);
+  }
+}
+
 startServer().catch((error) => {
   console.error('Erreur demarrage serveur:', error);
   process.exit(1);
 });
-

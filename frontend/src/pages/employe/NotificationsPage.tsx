@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiClient } from '../../services/apiClient'
 import { useAuth } from '../../services/authService'
 
-const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'comptable', 'stagiaire'])
+const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'stagiaire'])
 const FILTERS = ['all', 'pointage', 'retard', 'absence', 'demande', 'badge', 'evenement'] as const
 type FilterType = typeof FILTERS[number]
 
@@ -124,7 +124,7 @@ const NotificationsPage: React.FC = () => {
       try {
         await apiClient.delete(`/api/notifications/${dbId}`)
       } catch {
-        await apiClient.delete(`/api/api/notifications/${dbId}`)
+        await apiClient.delete(`/api/notifications/${dbId}`)
       }
       setNotifications((previous) => previous.filter((item) => item.id !== notification.id))
       setSelected(null)
@@ -143,7 +143,7 @@ const NotificationsPage: React.FC = () => {
       try {
         await apiClient.put(`/api/notifications/${dbId}/read`, { read: true })
       } catch {
-        await apiClient.put(`/api/api/notifications/${dbId}/read`, { read: true })
+        await apiClient.put(`/api/notifications/${dbId}/read`, { read: true })
       }
       setNotifications((previous) => previous.map((item) => (item.id === notification.id ? { ...item, lue: true } : item)))
       setSelected((previous) => (previous && previous.id === notification.id ? { ...previous, lue: true } : previous))

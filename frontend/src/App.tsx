@@ -57,6 +57,14 @@ function App() {
           } 
         />
         <Route path="/scan-qr" element={<Navigate to="/scan" replace />} />
+        <Route 
+          path="/scan-zone" 
+          element={
+            <ProtectedRoute requiredRoles={['admin', 'super_admin', 'manager', 'hr']}>
+              <ScanQRPage />
+            </ProtectedRoute>
+          } 
+        />
 
         <Route
           path="/admin"

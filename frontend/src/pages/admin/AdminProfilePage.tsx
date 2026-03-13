@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { UserRound, Settings, Eye, EyeOff } from 'lucide-react'
+import { UserRound, Settings, Eye, EyeOff, Activity, Calendar, Clock, IdCard, QrCode, X } from 'lucide-react'
 import LayoutFix from '../../components/LayoutFix'
 import { apiClient } from '../../services/apiClient'
 import { useAuth } from '../../services/authService'
@@ -253,135 +253,35 @@ const AdminProfilePage: React.FC = () => {
     }
   }
 
-  const loadAdminBadge = async (adminId: number, userProfile?: AdminProfile, retryCount = 0) => {
+  const loadAdminBadge = async (adminId: number, userProfile?: AdminProfile) => {
     try {
       setLoadingBadge(true)
-      console.log(`🔄 Chargement du badge pour l'admin ID: ${adminId} (tentative ${retryCount + 1})`)
 
-      // Utiliser le profil utilisateur passé en paramètre ou celui de l'état
       const currentProfile = userProfile || profile
-      
-      // Essayer les endpoints spécifiques pour les admins
-      const endpoints = ['/api/admin/badge', '/api/badge/admin']
-      let badgeFound = false
-      
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`📡 Tentative endpoint: ${endpoint}`)
-          const response = await apiClient.get<{ success: boolean; badge?: BadgePreview | null; message?: string }>(endpoint)
-          console.log(`📋 Réponse de ${endpoint}:`, { success: response?.success, hasBadge: !!response?.badge })
-          
-          if (response?.success && response.badge?.token) {
-            console.log(`✅ Badge trouvé via ${endpoint}:`, { 
-              id: response.badge.id, 
-              token: response.badge.token.substring(0, 10) + '...', 
-              status: response.badge.status 
-            })
-            
-            // Nettoyer et enrichir les données du badge
-            const cleanedBadge = {
-              ...response.badge,
-              qrCode: buildBadgeQrUrl(response.badge.token),
-              user_matricule: response.badge.user_matricule || response.badge.badgeId || currentProfile?.matricule || '',
-              user_name: response.badge.user_name || `${currentProfile?.prenom} ${currentProfile?.nom}`,
-              user_email: response.badge.user_email || currentProfile?.email,
-              user_role: response.badge.user_role || currentProfile?.role,
-              user_type: 'admin' as const
-            }
-            
-            setBadge(cleanedBadge)
-            console.log('🎯 Badge admin récupéré et nettoyé avec succès via endpoints admin')
-            badgeFound = true
-            return
-          }
-        } catch (endpointError: any) {
-          console.log(`❌ Erreur endpoint ${endpoint}:`, endpointError?.message || endpointError?.status || 'Erreur inconnue')
-          if (Number(endpointError?.status || 0) === 404) {
-            console.log(`📍 Endpoint ${endpoint} non trouvé (404), essai suivant`)
-            continue
-          }
-          console.log(`📍 Erreur autre que 404, continuation`)
-        }
+      const response = await apiClient.get<{ success: boolean; badge?: BadgePreview | null; message?: string }>('/api/admin/badge')
+      if (!response?.success) {
+        throw new Error(response?.message || 'Chargement du badge impossible')
       }
 
-      if (!badgeFound) {
-        console.log('❌ Aucun badge trouvé via endpoints spécifiques, tentative fallback')
-        
-        // Fallback : chercher dans tous les badges
-        try {
-          const fallbackResponse = await apiClient.get<{ success: boolean; badges?: BadgePreview[]; message?: string }>('/api/badges?history=all')
-          console.log(`📋 Réponse fallback:`, { success: fallbackResponse?.success, badgesCount: fallbackResponse?.badges?.length || 0 })
-          
-          if (fallbackResponse?.success && Array.isArray(fallbackResponse.badges)) {
-            console.log(`📋 Recherche parmi ${fallbackResponse.badges.length} badges`)
-            const fallbackBadge = fallbackResponse.badges
-              .filter((entry) => Number(entry.user_id) === adminId && String(entry.user_type || 'admin') === 'admin')
-              .sort((left, right) => {
-                const leftTime = new Date(left.created_at || 0).getTime()
-                const rightTime = new Date(right.created_at || 0).getTime()
-                return rightTime - leftTime
-              })[0] || null
-
-            if (fallbackBadge && fallbackBadge.token) {
-              console.log('✅ Badge trouvé via fallback:', { 
-                id: fallbackBadge.id, 
-                token: fallbackBadge.token.substring(0, 10) + '...', 
-                status: fallbackBadge.status 
-              })
-              
-              // Nettoyer et enrichir les données du badge
-              const cleanedBadge = {
-                ...fallbackBadge,
-                qrCode: buildBadgeQrUrl(fallbackBadge.token),
-                user_matricule: fallbackBadge.user_matricule || fallbackBadge.badgeId || currentProfile?.matricule || '',
-                user_name: fallbackBadge.user_name || `${currentProfile?.prenom} ${currentProfile?.nom}`,
-                user_email: fallbackBadge.user_email || currentProfile?.email,
-                user_role: fallbackBadge.user_role || currentProfile?.role,
-                user_type: 'admin' as const
-              }
-              
-              setBadge(cleanedBadge)
-              console.log('🎯 Badge admin récupéré et nettoyé avec succès via fallback')
-              badgeFound = true
-              return
-            }
-          }
-        } catch (fallbackError: any) {
-          console.log('❌ Erreur fallback:', fallbackError?.message || fallbackError?.status || 'Erreur inconnue')
-        }
-      }
-
-      if (!badgeFound) {
-        console.log('❌ Aucun badge trouvé pour cet admin après toutes les tentatives')
+      if (!response.badge?.token) {
         setBadge(null)
-        
-        // Si aucun badge trouvé et que nous n'avons pas encore réessayé, attendre un peu et réessayer
-        if (retryCount < 2) {
-          console.log(`🔄 Aucun badge trouvé, nouvel essai dans 2 secondes...`)
-          setTimeout(() => {
-            loadAdminBadge(adminId, userProfile, retryCount + 1)
-          }, 2000)
-          return
-        } else {
-          console.log('❌ Nombre maximum de tentatives atteint, abandon')
-        }
-      }
-    } catch (badgeError: any) {
-      console.error('💥 Erreur générale chargement badge admin:', badgeError)
-      
-      // En cas d'erreur et si nous n'avons pas encore réessayé, attendre un peu et réessayer
-      if (retryCount < 2) {
-        console.log(`🔄 Erreur de chargement, nouvel essai dans 2 secondes...`)
-        setTimeout(() => {
-          loadAdminBadge(adminId, userProfile, retryCount + 1)
-        }, 2000)
         return
       }
-      
+
+      setBadge({
+        ...response.badge,
+        qrCode: buildBadgeQrUrl(response.badge.token),
+        user_matricule: response.badge.user_matricule || response.badge.badgeId || currentProfile?.matricule || '',
+        user_name: response.badge.user_name || `${currentProfile?.prenom} ${currentProfile?.nom}`,
+        user_email: response.badge.user_email || currentProfile?.email,
+        user_role: response.badge.user_role || currentProfile?.role,
+        user_type: 'admin' as const
+      })
+    } catch (badgeError: any) {
+      console.error('Erreur chargement badge admin:', badgeError)
       setBadge(null)
     } finally {
       setLoadingBadge(false)
-      console.log('🏁 Fin du chargement du badge admin')
     }
   }
 
@@ -901,102 +801,116 @@ const AdminProfilePage: React.FC = () => {
         </section>
       </div>
       
-      {/* Modal Badge */}
+      {/* Modal Badge - Design identique à BadgePage employé */}
       {badgeModalOpen && badge && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setBadgeModalOpen(false)
             }
           }}
         >
-          <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 relative" onClick={(e) => e.stopPropagation()}>
-            {/* Bouton fermer en haut à droite */}
-            <button
-              onClick={() => setBadgeModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-              title="Fermer"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-
-            {/* Contenu principal du badge */}
-            <div className="text-center space-y-6">
-              {/* Photo et informations principales */}
-              <div className="flex flex-col items-center space-y-4">
-                {/* Photo de profil */}
-                <div className="w-24 h-24 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-lg">
-                  {badge.photo ? (
-                    <img src={badge.photo} alt="Badge" className="w-full h-full rounded-full object-cover" />
-                  ) : (
-                    <span className="text-3xl font-bold text-white">{initials}</span>
-                  )}
-                </div>
-                
-                {/* Nom et rôle */}
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{profile?.prenom} {profile?.nom}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{formatRole(profile?.role)}</p>
-                </div>
-              </div>
-
-              {/* Carte d'informations du badge */}
-              <div className="bg-gray-50 rounded-xl p-6 space-y-4 border border-gray-200">
-                <div className="text-center mb-4">
-                  <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
-                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
-                    {badge.status === 'active' ? 'Actif' :
-                     badge.status === 'inactive' ? 'Inactif' : 'Expiré'}
-                  </div>
-                </div>
-
-                {/* QR Code centré */}
-                <div className="flex justify-center">
-                  <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                    <img 
-                      src={badge.qrCode || buildBadgeQrUrl(badge.token, 200)} 
-                      alt="QR Code" 
-                      className="w-32 h-32"
-                    />
-                  </div>
-                </div>
-
-                {/* Informations détaillées */}
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                    <span className="text-gray-600 font-medium">Matricule</span>
-                    <span className="font-mono text-gray-900 font-semibold">{badge.user_matricule || badgeId || generateMatricule(profile?.prenom, profile?.nom)}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                    <span className="text-gray-600 font-medium">Token</span>
-                    <span className="font-mono text-gray-900 text-xs break-all max-w-[200px]">{badge.token}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                    <span className="text-gray-600 font-medium">Département</span>
-                    <span className="text-gray-900">{profile?.departement || '-'}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                    <span className="text-gray-600 font-medium">Poste</span>
-                    <span className="text-gray-900">{profile?.poste || '-'}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600 font-medium">Email</span>
-                    <span className="text-gray-900 text-xs break-all max-w-[200px]">{profile?.email || '-'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bouton Fermer */}
-              <div>
+          <div className="bg-white rounded-xl shadow-2xl border border-gray-200 max-w-lg w-full mx-4 relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-100 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                  <QrCode className="w-6 h-6 mr-2 text-blue-600" />
+                  Mon Badge QR
+                </h2>
                 <button
                   onClick={() => setBadgeModalOpen(false)}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-200 shadow-md hover:shadow-lg font-medium"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100"
                 >
-                  Fermer
+                  <X className="w-6 h-6" />
                 </button>
+              </div>
+            </div>
+
+            {/* Contenu */}
+            <div className="p-8">
+              <div className="flex flex-col items-center">
+                {/* QR Code Container */}
+                <div className="relative mb-6">
+                  <div className="w-80 h-80 rounded-2xl border-4 border-gray-200 bg-white shadow-xl flex items-center justify-center relative overflow-hidden">
+                    <img 
+                      src={badge.qrCode || buildBadgeQrUrl(badge.token, 300)} 
+                      alt="Badge QR" 
+                      className="w-[300px] h-[300px] object-contain"
+                    />
+                    {/* Status Badge */}
+                    <div className={`absolute top-4 right-4 w-10 h-10 rounded-full border-2 border-white ${
+                      badge.status === 'active' ? 'bg-green-500' :
+                      badge.status === 'inactive' ? 'bg-red-500' : 'bg-yellow-500'
+                    }`}>
+                      <span className="text-white text-sm flex items-center justify-center h-full font-bold">
+                        {badge.status === 'active' ? '✓' :
+                         badge.status === 'inactive' ? '✗' : '!'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Token Info */}
+                  <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-lg border border-gray-200 px-4 py-2">
+                    <p className="text-xs font-mono text-gray-600">Token: {badge.token.substring(0, 12)}...</p>
+                  </div>
+                </div>
+
+                {/* User Info */}
+                <div className="text-center space-y-3 w-full">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">{profile?.prenom} {profile?.nom}</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="flex items-center justify-center space-x-2">
+                        <Activity className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-600">{profile?.poste || '-'}</span>
+                      </div>
+                      <div className="flex items-center justify-center space-x-2">
+                        <Activity className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-600">{profile?.departement || '-'}</span>
+                      </div>
+                      <div className="flex items-center justify-center space-x-2">
+                        <IdCard className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-600">Matricule: {badge.user_matricule || badgeId || '-'}</span>
+                      </div>
+                      <div className="flex items-center justify-center space-x-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-600">Expire: {badge.expires_at ? new Date(badge.expires_at).toLocaleDateString('fr-FR') : '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-4 w-full">
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <Clock className="w-5 h-5 text-blue-600 mx-auto mb-1" />
+                      <p className="text-xs text-gray-600">Dernière utilisation</p>
+                      <p className="text-sm font-medium text-gray-900">{badge.last_used ? new Date(badge.last_used).toLocaleDateString('fr-FR') : '-'}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <Activity className="w-5 h-5 text-green-600 mx-auto mb-1" />
+                      <p className="text-xs text-gray-600">Utilisations totales</p>
+                      <p className="text-sm font-medium text-gray-900">{badge.usage_count || 0}</p>
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="pt-4 border-t border-gray-200">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                      badge.status === 'active' ? 'bg-green-100 text-green-800 border border-green-200' :
+                      badge.status === 'inactive' ? 'bg-red-100 text-red-800 border border-red-200' :
+                      'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                    }`}>
+                      <div className={`w-2 h-2 rounded-full mr-2 ${
+                        badge.status === 'active' ? 'bg-green-500' : 
+                        badge.status === 'inactive' ? 'bg-red-500' : 'bg-yellow-500'
+                      }`}></div>
+                      {badge.status === 'active' ? 'Badge Actif' :
+                       badge.status === 'inactive' ? 'Badge Inactif' : 'Badge Expiré'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

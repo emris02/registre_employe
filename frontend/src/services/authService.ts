@@ -8,7 +8,7 @@ export interface User {
   nom: string
   prenom: string
   email: string
-  role: 'admin' | 'super_admin' | 'manager' | 'chef_departement' | 'comptable' | 'stagiaire' | 'hr' | 'employe'
+  role: 'admin' | 'super_admin' | 'manager' | 'chef_departement' | 'stagiaire' | 'hr' | 'employe'
   departement?: string
   telephone?: string
   adresse?: string

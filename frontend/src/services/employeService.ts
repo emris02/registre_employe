@@ -185,7 +185,7 @@ class EmployeService {
 
   // Marquer une notification comme lue
   async markNotificationAsRead(notificationId: number): Promise<void> {
-    await apiClient.put<{ read: boolean }, { success: boolean }>(`/api/api/notifications/${notificationId}/read`, { read: true });
+    await apiClient.put<{ read: boolean }, { success: boolean }>(`/api/notifications/${notificationId}/read`, { read: true });
   }
 
   // Marquer toutes les notifications comme lues
@@ -193,7 +193,7 @@ class EmployeService {
     try {
       await apiClient.put<Record<string, never>, { success: boolean }>('/api/notifications/read-all', {});
     } catch {
-      await apiClient.put<Record<string, never>, { success: boolean }>('/api/api/notifications/read-all', {});
+      await apiClient.put<Record<string, never>, { success: boolean }>('/api/notifications/read-all', {});
     }
   }
 

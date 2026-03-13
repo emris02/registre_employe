@@ -16,7 +16,7 @@ interface EmployeProfile {
   contact_urgence_adresse_physique?: string
 }
 
-const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'comptable', 'stagiaire'])
+const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'stagiaire'])
 
 const DEFAULT_PROFILE_FORM = {
   nom: '',

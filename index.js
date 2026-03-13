@@ -15,9 +15,9 @@ async function sendMail() {
     const info = await transporter.sendMail({
       from: '"Test Node" <xpertproformation@gmail.com>',
       to: "DESTINATAIRE@gmail.com",
-      subject: "Test email Node.js",
-      text: "Si tu reçois ce mail, ça marche !",
-      html: "<h2>Email envoyé depuis Node.js avec succès</h2>",
+      subject: "Mot de passe par defaut",
+      text: "Veuillez changer votre mot de passe sur votre profil !",
+      html: "<h2>Groupe XpertPro</h2>",
     });
 
     console.log("Email envoyé :", info.messageId);

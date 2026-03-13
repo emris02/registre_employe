@@ -8,8 +8,29 @@ import interactionPlugin from '@fullcalendar/interaction'
 import frLocale from '@fullcalendar/core/locales/fr'
 import { adminService, AdminNotification, Demande, Employe, PointageEntry } from '../../services/adminService'
 import { CalendarEvent, calendarService } from '../../services/calendarService'
+import { apiClient } from '../../services/apiClient'
 import { useAuth } from '../../services/authService'
 import AdminPointageSection from './AdminPointageSection'
+
+interface AdminBadgePreview {
+  id: number
+  token: string
+  created_at?: string
+  expires_at?: string
+  status?: 'active' | 'inactive' | 'expired'
+  last_used?: string | null
+  usage_count?: number
+  user_matricule?: string
+  user_name?: string
+  user_email?: string
+  user_role?: string
+}
+
+const buildBadgeQrUrl = (token: string, size = 140) => {
+  const safeToken = String(token || '').trim()
+  if (!safeToken) return ''
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(safeToken)}`
+}
 
 interface DashboardStats {
   total_employes: number
@@ -163,6 +184,61 @@ const AdminDashboard = () => {
   const [demandeDecision, setDemandeDecision] = useState<'approuve' | 'rejete'>('approuve')
   const [demandeCommentaire, setDemandeCommentaire] = useState('')
   const [demandeFeedback, setDemandeFeedback] = useState<string | null>(null)
+  const [traiteursCache, setTraiteursCache] = useState<Record<string, { nom: string; role: string; matricule: string }>>({})
+
+  // Fonction pour parser le commentaire et extraire le nom de l'utilisateur
+  const parseTraiterPar = (commentaire: string) => {
+    if (!commentaire) return null
+    
+    // Format attendu: "[Manager#5 2026-02-19T14:10:12.122Z]: ok depuis test"
+    const match = commentaire.match(/^\[([a-zA-Z]+)#(\d+)\s*(.+?)\]:(.+)$/);
+    if (!match) return { username: '', action: '', comment: '' }
+    
+    const [, role, id, action, comment] = match;
+    return {
+      username: `${role}#${id}`,
+      action: action.trim(),
+      comment: comment.trim()
+    };
+  }
+
+  // Fonction pour obtenir le nom de l'utilisateur qui a traité la demande
+  const getTraiterParInfo = async (traitePar: string) => {
+    if (!traitePar) return null
+    
+    // Vérifier si déjà en cache
+    if (traiteursCache[traitePar]) {
+      return traiteursCache[traitePar]
+    }
+    
+    try {
+      const response = await apiClient.get(`/api/employes/${traitePar}`) as any
+      if (response?.success && response?.employe) {
+        const info = {
+          nom: `${response.employe.prenom} ${response.employe.nom}`,
+          role: response.employe.role || '',
+          matricule: response.employe.matricule || ''
+        }
+        // Mettre en cache
+        setTraiteursCache(prev => ({ ...prev, [traitePar]: info }))
+        return info
+      }
+      return null
+    } catch (error) {
+      console.error('Erreur lors de la récupération des infos du traiteur:', error)
+      return null
+    }
+  }
+
+  // Fonction synchrone pour obtenir le nom depuis le cache ou l'ID
+  const getTraiterParNom = (traitePar?: number | string | null, traiteParNom?: string | null) => {
+    const name = String(traiteParNom || '').trim()
+    if (name) return name
+
+    const id = Number(traitePar || 0)
+    if (!Number.isInteger(id) || id <= 0) return 'Non spécifié'
+    return `ID: ${id}`
+  }
   const [processingDemande, setProcessingDemande] = useState(false)
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [calendarLoading, setCalendarLoading] = useState(false)
@@ -190,6 +266,10 @@ const AdminDashboard = () => {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [adminBadge, setAdminBadge] = useState<AdminBadgePreview | null>(null)
+  const [adminBadgeLoading, setAdminBadgeLoading] = useState(false)
+  const [adminBadgeModalOpen, setAdminBadgeModalOpen] = useState(false)
 
   const isUnauthorizedError = useCallback((err: any) => {
     const status = Number(err?.status || 0)
@@ -658,6 +738,30 @@ const AdminDashboard = () => {
     void loadCalendarEvents()
   }, [authLoading, loadCalendarEvents, user])
 
+  useEffect(() => {
+    const loadAdminBadge = async () => {
+      if (authLoading || !user) return
+      if (!ADMIN_ALLOWED_ROLES.has(String(user.role || '').toLowerCase())) return
+
+      try {
+        setAdminBadgeLoading(true)
+        const response = await apiClient.get<{ success: boolean; badge?: AdminBadgePreview | null; message?: string }>('/api/admin/badge')
+        if (response?.success) {
+          setAdminBadge(response.badge?.token ? response.badge : null)
+        } else {
+          setAdminBadge(null)
+        }
+      } catch (badgeError) {
+        console.error('Erreur chargement badge admin dashboard:', badgeError)
+        setAdminBadge(null)
+      } finally {
+        setAdminBadgeLoading(false)
+      }
+    }
+
+    void loadAdminBadge()
+  }, [authLoading, user])
+
   const todayLabel = useMemo(
     () => new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }),
     []
@@ -730,7 +834,99 @@ const AdminDashboard = () => {
         </article>
       </section>
 
-      
+      {/* Section Badge Admin */}
+      <section className="php-card" style={{ marginBottom: '2rem' }}>
+        <div className="php-card-header">
+          <h2 className="php-card-title">Mon Badge Admin</h2>
+          <button 
+            onClick={() => navigate('/admin/profil')}
+            className="php-btn php-btn-primary php-btn-sm"
+          >
+            Voir mon profil
+          </button>
+        </div>
+        <div className="php-card-body">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl">
+              {user?.prenom?.[0]}{user?.nom?.[0]}
+            </div>
+
+            <div className="min-w-[220px]">
+              <p className="font-semibold text-gray-900">{user?.prenom} {user?.nom}</p>
+              <p className="text-sm text-gray-600">{user?.role === 'super_admin' ? 'Super Admin' : 'Administrateur'}</p>
+              {adminBadgeLoading ? (
+                <span className="inline-flex items-center px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-medium mt-1">Chargement badge...</span>
+              ) : adminBadge?.token ? (
+                <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium mt-1 ${
+                  adminBadge.status === 'inactive'
+                    ? 'bg-red-100 text-red-800'
+                    : adminBadge.status === 'expired'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : 'bg-green-100 text-green-800'
+                }`}>
+                  {adminBadge.status === 'inactive'
+                    ? 'Badge inactif'
+                    : adminBadge.status === 'expired'
+                      ? 'Badge expiré'
+                      : 'Badge actif'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-1 bg-red-50 text-red-700 rounded-md text-xs font-medium mt-1">Aucun badge</span>
+              )}
+            </div>
+
+            {adminBadge?.token ? (
+              <button
+                type="button"
+                className="ml-auto flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 hover:bg-gray-50"
+                onClick={() => setAdminBadgeModalOpen(true)}
+                title="Afficher le badge"
+              >
+                <img
+                  src={buildBadgeQrUrl(adminBadge.token, 90)}
+                  alt="Badge QR"
+                  className="w-[90px] h-[90px] object-contain"
+                />
+                <span className="text-sm text-gray-700">Aperçu</span>
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {adminBadgeModalOpen && adminBadge?.token ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setAdminBadgeModalOpen(false)} aria-hidden="true" />
+          <div className="relative w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-100">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <QrCode size={18} />
+                Mon badge admin
+              </h3>
+              <button
+                type="button"
+                className="px-3 py-2 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setAdminBadgeModalOpen(false)}
+              >
+                Fermer
+              </button>
+            </div>
+            <div className="p-6 flex flex-col items-center gap-4">
+              <div className="w-80 h-80 rounded-2xl border-4 border-gray-200 bg-white shadow-xl flex items-center justify-center overflow-hidden">
+                <img
+                  src={buildBadgeQrUrl(adminBadge.token, 320)}
+                  alt="Badge QR"
+                  className="w-[300px] h-[300px] object-contain"
+                />
+              </div>
+              <div className="text-xs font-mono text-gray-600 break-all text-center">
+                {adminBadge.token}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="php-grid-2 php-grid-equal-cards" style={{ minHeight: '500px', gap: '1.5rem' }}>
         <article className="php-card">
           <div className="php-card-header">
@@ -966,16 +1162,17 @@ const AdminDashboard = () => {
                 <th>Type</th>
                 <th>Periode</th>
                 <th>Statut</th>
+                <th>Traité par</th>
               </tr>
             </thead>
             <tbody>
-              {demandes.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>Aucune demande trouvee.</td>
-                </tr>
-              ) : (
-                demandes.map((demande) => (
-                  <tr key={demande.id} onClick={() => openDemandeModal(demande)} style={{ cursor: 'pointer' }}>
+                {demandes.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>Aucune demande trouvee.</td>
+                  </tr>
+                ) : (
+                  demandes.map((demande) => (
+                    <tr key={demande.id} onClick={() => openDemandeModal(demande)} style={{ cursor: 'pointer' }}>
                     <td>{demande.prenom} {demande.nom}</td>
                     <td>{demande.type}</td>
                     <td>{demande.date_debut || '-'} - {demande.date_fin || '-'}</td>
@@ -988,6 +1185,7 @@ const AdminDashboard = () => {
                         {demande.statut}
                       </span>
                     </td>
+                    <td>{getTraiterParNom(demande.traite_par, demande.traite_par_nom)}</td>
                   </tr>
                 ))
               )}
@@ -1051,11 +1249,16 @@ const AdminDashboard = () => {
                   </span>
                 </div>
                 <div>
-                  <strong>Motif employe:</strong> {selectedDemande.motif || '-'}
+                  <strong>Motif employé:</strong> {selectedDemande.motif || '-'}
                 </div>
                 {selectedDemande.commentaire ? (
                   <div className="mt-2 text-gray-600 whitespace-pre-wrap">
                     <strong>Commentaire:</strong> {selectedDemande.commentaire}
+                  </div>
+                ) : null}
+                {selectedDemande.traite_par ? (
+                  <div className="mt-2">
+                    <strong>Traité par:</strong> {getTraiterParNom(selectedDemande.traite_par, selectedDemande.traite_par_nom)}
                   </div>
                 ) : null}
               </div>

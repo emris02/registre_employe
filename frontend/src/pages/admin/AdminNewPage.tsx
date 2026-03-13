@@ -312,13 +312,23 @@ export default function AdminNewPage() {
         contact_urgence_relation: formData.contact_urgence_relation || undefined,
         contact_urgence_adresse_physique: formData.contact_urgence_adresse_physique?.trim() || undefined,
         photo: formData.photo || undefined,
-        password: formData.password
+        password: formData.password,
+        sendEmail: true
       }
 
       const response = await apiClient.post('/admins', payload) as any
       
       if (response?.success) {
-        setSuccess('Admin créé avec succès!')
+        const emailStatus = response?.credentials_email
+        const emailSent = Boolean(emailStatus?.sent)
+        const emailError = String(emailStatus?.error || '').trim()
+        const emailInfo = emailSent
+          ? `Identifiants envoyes par email a ${formData.email.trim()}.`
+          : emailError
+            ? `Email non envoye: ${emailError}`
+            : 'Email non envoye.'
+
+        setSuccess(`Admin cree avec succes! ${emailInfo}`)
         setGeneratedIds({
           id: response.admin?.id || 0,
           matricule: response.admin?.matricule || ''

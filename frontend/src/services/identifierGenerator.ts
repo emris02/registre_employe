@@ -36,18 +36,17 @@ export class IdentifierGenerator {
     const sequence = id.toString().padStart(4, '0');
     
     // Préfixe selon le rôle
-    const rolePrefixes: { [key: string]: string } = {
+    const ROLE_PREFIXES: Record<string, string> = {
       'super_admin': 'SA',
       'admin': 'AD',
       'manager': 'MG',
       'chef_departement': 'CD',
-      'comptable': 'CP',
       'stagiaire': 'ST',
       'hr': 'RH',
       'employe': 'EM'
     };
     
-    const prefix = rolePrefixes[role] || 'EM';
+    const prefix = ROLE_PREFIXES[role] || 'EM';
     return `${prefix}-${year}${month}-${sequence}`;
   }
   

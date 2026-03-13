@@ -17,7 +17,7 @@ interface RetardEntry {
   created_at?: string
 }
 
-const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'comptable', 'stagiaire'])
+const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'stagiaire'])
 const toDateInput = (date: Date) => date.toISOString().slice(0, 10)
 
 const formatDateTime = (value: string) => {

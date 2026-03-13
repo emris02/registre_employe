@@ -1,5 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 import LayoutFix from '../../components/LayoutFix'
 import { useAuth } from '../../services/authService'
 import { apiClient } from '../../services/apiClient'
@@ -45,6 +46,15 @@ const FALLBACK_EMPLOYEE_ROLES: RoleDefinition[] = [
 ]
 
 const isBlobUrl = (value: string) => value.startsWith('blob:')
+
+const generateRandomPassword = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
+  let password = ''
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return password
+}
 const PREVIEW_ROLE_PREFIX: Record<string, string> = {
   super_admin: 'SAD',
   admin: 'ADM',
@@ -99,6 +109,13 @@ export default function EmployeNewPage() {
   const [generatedIds, setGeneratedIds] = useState<{ id: number; matricule: string } | null>(null)
   const [loadingIdentifiers, setLoadingIdentifiers] = useState(false)
   const [roles, setRoles] = useState<RoleDefinition[]>(FALLBACK_EMPLOYEE_ROLES)
+  const [sendCredentialsEmail, setSendCredentialsEmail] = useState(true)
+  const [useCustomPassword, setUseCustomPassword] = useState(false)
+  const [customPassword, setCustomPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [generatedPassword, setGeneratedPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const resolvedPhotoUrl = useMemo(
     () => photoPreviewUrl || uploadService.resolvePhotoUrl(formData.photo),
@@ -287,17 +304,55 @@ export default function EmployeNewPage() {
         return
       }
 
+      let passwordToUse = ''
+      let passwordGenerated = false
+      if (useCustomPassword) {
+        const trimmedPassword = customPassword.trim()
+        if (!trimmedPassword) {
+          setError('Le mot de passe est obligatoire.')
+          return
+        }
+        if (trimmedPassword.length < 8) {
+          setError('Le mot de passe doit contenir au moins 8 caracteres.')
+          return
+        }
+        if (trimmedPassword !== confirmPassword) {
+          setError('Les mots de passe ne correspondent pas.')
+          return
+        }
+        passwordToUse = trimmedPassword
+        setGeneratedPassword('')
+      } else {
+        passwordToUse = generateRandomPassword()
+        passwordGenerated = true
+        setGeneratedPassword(passwordToUse)
+      }
+
       const response = await apiClient.post<NewEmploye, any>(
         '/api/admin/employes',
-        formData
+        { ...formData, password: passwordToUse, sendEmail: sendCredentialsEmail }
       )
       const created = response?.employe || response
       if (!created || !created.id) {
         throw new Error(response?.message || "Erreur lors de la creation de l'employe.")
       }
 
-      setSuccess('Employe cree avec succes.')
-      navigate('/admin/employes')
+      const emailStatus = created?.credentials_email
+      const emailSent = Boolean(emailStatus?.sent)
+      const emailError = String(emailStatus?.error || '').trim()
+      const emailInfo = sendCredentialsEmail
+        ? emailSent
+          ? `Email envoye a ${formData.email}`
+          : emailError
+            ? `Email non envoye: ${emailError}`
+            : `Email non envoye`
+        : 'Email non demande'
+
+      const passwordInfo = passwordGenerated ? `Mot de passe genere: ${passwordToUse}` : 'Mot de passe enregistre.'
+      setSuccess(`Employe cree avec succes. ${passwordInfo} ${emailInfo}`)
+      window.setTimeout(() => {
+        navigate('/admin/employes')
+      }, 2000)
     } catch (createError) {
       console.error('Erreur creation employe:', createError)
       setError("Erreur lors de la creation de l'employe.")
@@ -600,6 +655,110 @@ export default function EmployeNewPage() {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-7">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Securite</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
+            <div className="flex items-center gap-2">
+              <input
+                id="send_credentials_email"
+                type="checkbox"
+                checked={sendCredentialsEmail}
+                onChange={(event) => setSendCredentialsEmail(event.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="send_credentials_email" className="text-sm text-gray-700">
+                Envoyer les identifiants par email
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="use_custom_password"
+                type="checkbox"
+                checked={useCustomPassword}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setUseCustomPassword(checked)
+                  setCustomPassword('')
+                  setConfirmPassword('')
+                  setShowPassword(false)
+                  setShowConfirmPassword(false)
+                  if (checked) setGeneratedPassword('')
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="use_custom_password" className="text-sm text-gray-700">
+                Definir un mot de passe manuellement
+              </label>
+            </div>
+          </div>
+
+          {useCustomPassword ? (
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-7">
+              <div>
+                <label className="xp-form-label">Mot de passe</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={customPassword}
+                    onChange={(event) => setCustomPassword(event.target.value)}
+                    className="xp-form-input pr-10"
+                    placeholder="Minimum 8 caracteres"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((previous) => !previous)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+                    aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Minimum 8 caracteres.</p>
+              </div>
+
+              <div>
+                <label className="xp-form-label">Confirmer le mot de passe</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className="xp-form-input pr-10"
+                    placeholder="Doit correspondre"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((previous) => !previous)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+                    aria-label={showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-lg border border-gray-200 p-4 bg-gray-50">
+              <p className="text-sm text-gray-700">
+                Un mot de passe aleatoire sera genere lors de la creation.
+              </p>
+              {generatedPassword ? (
+                <div className="mt-3 rounded-md border border-gray-200 bg-white p-3 font-mono text-sm break-all">
+                  {generatedPassword}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 mt-2">Le mot de passe sera affiche ici apres creation.</p>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-gray-500 mt-4">
+            Conseil: l'utilisateur pourra changer son mot de passe apres la premiere connexion.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-7">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Informations personnelles</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
             <div>
@@ -712,4 +871,3 @@ export default function EmployeNewPage() {
     </LayoutFix>
   )
 }
-

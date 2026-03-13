@@ -101,7 +101,7 @@ app.post('/api/scan/unlock/request', validateToken, async (req, res) => {
     }
 
     if (!isValid) {
-      return res.status(403).json({ success: false, message: 'Déverrouillage non autorisé' });
+      return res.status(403).json({ success: false, message: 'Code pin incorrect déverrouillage non autorisé' });
     }
 
     const sessionData = {
@@ -240,7 +240,7 @@ describe('Tests de déverrouillage de la zone de scan', () => {
 
       expect(response.status).toBe(403);
       expect(response.body.success).toBe(false);
-      expect(response.body.message).toBe('Déverrouillage non autorisé');
+      expect(response.body.message).toBe('Code pin incorrect déverrouillage non autorisé');
     });
 
     test('Échec avec code PIN invalide (non numérique)', async () => {

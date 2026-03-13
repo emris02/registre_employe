@@ -38,7 +38,7 @@ interface ScanResponsePayload {
   }
 }
 
-const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'comptable', 'stagiaire'])
+const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'stagiaire'])
 
 const reasonLabel = (value?: string | null) => {
   if (value === 'retard') return 'Retard a justifier'

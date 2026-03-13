@@ -38,7 +38,8 @@ export const ROLES: Role[] = [
       'reports.view',
       'reports.export',
       'settings.view',
-      'settings.manage'
+      'settings.manage',
+      'roles.manage' // Permission pour gérer les rôles
     ],
     description: 'Gestion complète de l\'entreprise'
   },
@@ -69,17 +70,6 @@ export const ROLES: Role[] = [
     description: 'Pilotage d un departement et validation locale'
   },
   {
-    id: 'comptable',
-    name: 'Comptable',
-    permissions: [
-      'dashboard.view',
-      'employees.view',
-      'reports.view',
-      'reports.export'
-    ],
-    description: 'Consultation des donnees de presence et rapports comptables'
-  },
-  {
     id: 'stagiaire',
     name: 'Stagiaire',
     permissions: [
@@ -91,22 +81,7 @@ export const ROLES: Role[] = [
     ],
     description: 'Acces limite aux fonctions personnelles'
   },
-  {
-    id: 'hr',
-    name: 'Ressources Humaines',
-    permissions: [
-      'dashboard.view',
-      'employees.view',
-      'employees.create',
-      'employees.edit',
-      'pointage.view',
-      'pointage.manage',
-      'conges.view',
-      'conges.manage',
-      'reports.view'
-    ],
-    description: 'Gestion du personnel et des congés'
-  },
+  
   {
     id: 'employe',
     name: 'Employé',
@@ -260,12 +235,77 @@ export class RoleService {
         icon: '⚙️',
         permission: 'settings.view',
         component: () => import('../components/panels/SettingsPanel').then(module => module.default)
+      },
+      {
+        id: 'roles',
+        label: 'Rôles',
+        icon: '👥',
+        permission: 'roles.manage',
+        component: () => import('../components/panels/RolesManagementPanel').then(module => module.default)
       }
     ];
 
     return allPanels.filter(panel => 
       this.hasPermission(userRole, panel.permission)
     );
+  }
+
+  // Nouvelles méthodes pour la gestion dynamique des rôles
+  static async createRole(roleData: Omit<Role, 'id'>): Promise<Role | null> {
+    try {
+      // Simuler l'appel API pour créer un rôle
+      const newRole: Role = {
+        id: roleData.name.toLowerCase().replace(/\s+/g, '_'),
+        ...roleData
+      };
+      
+      // Ajouter le rôle à la liste (en pratique, cela serait fait via l'API)
+      ROLES.push(newRole);
+      
+      console.log('Nouveau rôle créé:', newRole);
+      return newRole;
+    } catch (error) {
+      console.error('Erreur lors de la création du rôle:', error);
+      return null;
+    }
+  }
+
+  static async updateRole(roleId: string, roleData: Partial<Role>): Promise<Role | null> {
+    try {
+      const roleIndex = ROLES.findIndex(r => r.id === roleId);
+      if (roleIndex === -1) return null;
+      
+      // Mettre à jour le rôle
+      ROLES[roleIndex] = { ...ROLES[roleIndex], ...roleData };
+      
+      console.log('Rôle mis à jour:', ROLES[roleIndex]);
+      return ROLES[roleIndex];
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du rôle:', error);
+      return null;
+    }
+  }
+
+  static async deleteRole(roleId: string): Promise<boolean> {
+    try {
+      const roleIndex = ROLES.findIndex(r => r.id === roleId);
+      if (roleIndex === -1) return false;
+      
+      // Empêcher la suppression des rôles système critiques
+      const criticalRoles = ['super_admin', 'admin', 'employe'];
+      if (criticalRoles.includes(roleId)) {
+        throw new Error('Impossible de supprimer un rôle système critique');
+      }
+      
+      // Supprimer le rôle
+      ROLES.splice(roleIndex, 1);
+      
+      console.log('Rôle supprimé:', roleId);
+      return true;
+    } catch (error) {
+      console.error('Erreur lors de la suppression du rôle:', error);
+      return false;
+    }
   }
 
   static async assignRoleToUser(userId: number, roleId: string): Promise<boolean> {
@@ -290,5 +330,19 @@ export class RoleService {
       console.error('Error updating permissions:', error);
       return false;
     }
+  }
+
+  // Méthode pour obtenir les rôles disponibles pour les employés
+  static getEmployeeRoles(): Role[] {
+    return ROLES.filter(role => 
+      ['employe', 'chef_departement', 'stagiaire', 'manager'].includes(role.id)
+    );
+  }
+
+  // Méthode pour obtenir les rôles administratifs
+  static getAdminRoles(): Role[] {
+    return ROLES.filter(role => 
+      ['admin', 'super_admin', 'hr'].includes(role.id)
+    );
   }
 }

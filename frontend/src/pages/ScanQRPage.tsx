@@ -9,7 +9,7 @@ import {
   Clock3,
   Download,
   FileText,
-  ImageUp,
+  // ImageUp,
   Mail,
   MapPin,
   Phone,
@@ -32,7 +32,7 @@ type ScanSource = 'camera' | 'manual' | 'image'
 type ScanActionType = 'arrivee' | 'depart' | 'pause' | null
 type UiBadgeStatus = 'active' | 'inactive' | 'expired' | 'depart_done' | 'action_required' | 'unknown'
 type HistoryPeriod = 'day' | 'week' | 'month'
-type RequiredAction = 'pause' | 'depart_anticipe'
+type RequiredAction = 'pause' | 'pause_fin' | 'depart' | 'depart_anticipe'
 type HistoryStatusFilter = '' | 'a_l_heure' | 'en_retard' | 'indetermine'
 type HistoryActionFilter = '' | 'arrivee' | 'depart' | 'pause'
 
@@ -503,6 +503,7 @@ export default function ScanQRPage() {
   const [isScanUnlocked, setIsScanUnlocked] = useState(false)
   const [sessionCheckLoading, setSessionCheckLoading] = useState(true)
   const [remainingSessionMs, setRemainingSessionMs] = useState(0)
+  const [hasBeenUnlocked, setHasBeenUnlocked] = useState(false) // Nouvel état pour suivre si déjà déverrouillé
 
   // Hooks pour le scan
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -547,7 +548,7 @@ export default function ScanQRPage() {
     }
   }, [isAdmin, isLoading, navigate])
 
-  // Vérifier si la zone de scan est déverrouillée
+  // Vérifier si la zone de scan est déverrouillée (exécuté une seule fois au chargement)
   useEffect(() => {
     const checkScanSecurity = async () => {
       try {
@@ -557,10 +558,19 @@ export default function ScanQRPage() {
           try {
             await scanSecurityService.adminOverrideUnlock(60) // 60 minutes
             setIsScanUnlocked(true)
+            setHasBeenUnlocked(true)
           } catch (error) {
             console.error('Erreur lors du déverrouillage admin:', error)
             setIsScanUnlocked(false)
           }
+          setSessionCheckLoading(false)
+          return
+        }
+
+        // Pour les admins simples, ne PAS déverrouiller automatiquement - ils doivent saisir le PIN
+        if (String(user?.role || '').toLowerCase() === 'admin') {
+          console.log('Admin simple détecté - PIN requis pour accès à la zone de scan')
+          setIsScanUnlocked(false)
           setSessionCheckLoading(false)
           return
         }
@@ -576,6 +586,7 @@ export default function ScanQRPage() {
           }
           setIsScanUnlocked(true)
           setRemainingSessionMs(Number(validation.remaining_time || 0))
+          setHasBeenUnlocked(true)
         } else {
           setIsScanUnlocked(false)
           setRemainingSessionMs(0)
@@ -588,8 +599,11 @@ export default function ScanQRPage() {
         setSessionCheckLoading(false)
       }
     }
-
-    checkScanSecurity()
+    
+    // N'exécuter la vérification que si l'utilisateur change et que la page n'a pas encore été déverrouillée
+    if (user && !hasBeenUnlocked) {
+      checkScanSecurity()
+    }
   }, [user])
 
   useEffect(() => {
@@ -1419,13 +1433,31 @@ export default function ScanQRPage() {
                   Aller en pause
                 </button>
               )}
+              {actionDecision.availableActions.includes('pause_fin') && (
+                <button
+                  onClick={() => handleActionDecision('pause')}
+                  className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Fin de pause
+                </button>
+              )}
+              {actionDecision.availableActions.includes('depart') && (
+                <button
+                  onClick={() => handleActionDecision('depart')}
+                  className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Clock3 className="w-4 h-4" />
+                  Départ normal
+                </button>
+              )}
               {actionDecision.availableActions.includes('depart_anticipe') && (
                 <button
                   onClick={() => handleActionDecision('depart_anticipe')}
                   className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors flex items-center justify-center gap-2"
                 >
                   <Clock3 className="w-4 h-4" />
-                  Depart anticipe
+                  Départ anticipé
                 </button>
               )}
               <button
@@ -1484,17 +1516,29 @@ export default function ScanQRPage() {
               ) : null}
             </div>
             
-            <div className="flex gap-2">
-              <button 
-                onClick={handleJustificationDecisionClose} 
-                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors" 
-              >
-                Annuler
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleJustificationDecisionClose} 
+                  className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors" 
+                >
+                  Annuler
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!justificationDecision) return;
+                    void submitScan(justificationDecision.token, justificationDecision.source, justificationDecision.scanAction, '');
+                  }} 
+                  disabled={submitting} 
+                  className="flex-1 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Continuer sans motif
+                </button>
+              </div>
               <button 
                 onClick={handleJustificationDecisionSubmit} 
                 disabled={submitting} 
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 {submitting ? (
                   <>
@@ -1504,7 +1548,7 @@ export default function ScanQRPage() {
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    Valider
+                    Valider avec motif
                   </>
                 )}
               </button>

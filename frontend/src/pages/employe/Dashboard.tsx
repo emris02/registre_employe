@@ -159,7 +159,7 @@ const EMPTY_STATS: Statistique = {
   pointages_mois: 0
 }
 
-const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'comptable', 'stagiaire'])
+const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'stagiaire'])
 const CALENDAR_PRIORITY_LABELS: Record<'secondaire' | 'normale' | 'importante' | 'urgente', string> = {
   secondaire: 'Secondaire',
   normale: 'Normale',
@@ -376,7 +376,6 @@ const formatRoleLabel = (value?: string) => {
     manager: 'Manager',
     hr: 'RH',
     chef_departement: 'Chef de departement',
-    comptable: 'Comptable',
     stagiaire: 'Stagiaire',
     employe: 'Employe'
   }

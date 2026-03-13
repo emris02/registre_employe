@@ -274,7 +274,7 @@ const Topbar = ({ onMenuClick, onToggleSidebar, sidebarCollapsed, title, subtitl
     if (!Number.isInteger(targetId) || targetId <= 0) return
 
     try {
-      await apiClient.put(`/api/api/notifications/${targetId}/read`, { read: true })
+      await apiClient.put(`/api/notifications/${targetId}/read`, { read: true })
     } catch (firstError: any) {
       try {
         await apiClient.put(`/api/notifications/${targetId}/read`, { read: true })
@@ -316,7 +316,7 @@ const Topbar = ({ onMenuClick, onToggleSidebar, sidebarCollapsed, title, subtitl
           throw new Error('Identifiant notification invalide')
         }
         try {
-          await apiClient.delete(`/api/api/notifications/${targetId}`)
+          await apiClient.delete(`/api/admin/notifications/${targetId}`)
         } catch {
           await apiClient.delete(`/api/notifications/${targetId}`)
         }

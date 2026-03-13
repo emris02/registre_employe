@@ -32,11 +32,10 @@ interface EmployeProfile {
   role?: string
 }
 
-const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'comptable', 'stagiaire'])
+const EMPLOYEE_ALLOWED_ROLES = new Set(['employe', 'chef_departement', 'stagiaire'])
 
 const ROLE_BADGE_PRIVILEGES: Record<string, string[]> = {
   chef_departement: ['Acces planning equipe', 'Consultation tableau de service', 'Pointage securise'],
-  comptable: ['Acces feuilles de temps', 'Consultation historiques mensuels', 'Pointage securise'],
   stagiaire: ['Pointage personnel', 'Acces zones stagiaire', 'Historique personnel'],
   employe: ['Pointage personnel', 'Acces zone employe', 'Historique personnel']
 }

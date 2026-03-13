@@ -63,6 +63,8 @@ export interface Demande {
   statut: "en_attente" | "approuve" | "rejete"
   commentaire?: string
   traite_par?: number | null
+  traite_par_nom?: string | null
+  traite_par_role?: string | null
   date_traitement?: string | null
   heures_ecoulees?: number
   photo?: string
@@ -570,6 +572,9 @@ class AdminService {
             employeId ? `EMP-${String(employeId).padStart(4, '0')}` : ''
           ].map((value) => String(value ?? '').trim()).find(isUsableValue) || ''
 
+          const traiteParNom = String(raw?.traite_par_nom ?? raw?.traiteParNom ?? '').trim()
+          const traiteParRole = String(raw?.traite_par_role ?? raw?.traiteParRole ?? '').trim()
+
           return {
             id: Number(raw?.id || 0),
             employe_id: employeId,
@@ -587,6 +592,8 @@ class AdminService {
             statut: normalizeStatut(raw?.statut),
             commentaire: String(raw?.commentaire ?? raw?.comment ?? '').trim() || undefined,
             traite_par: Number(raw?.traite_par ?? raw?.traitePar ?? 0) || null,
+            traite_par_nom: traiteParNom || null,
+            traite_par_role: traiteParRole || null,
             date_traitement: String(raw?.date_traitement ?? raw?.dateTraitement ?? '').trim() || null,
             heures_ecoulees: Number(raw?.heures_ecoulees ?? raw?.elapsed_hours ?? 0) || undefined,
             photo: String(raw?.photo ?? raw?.employe?.photo ?? '').trim() || undefined,
@@ -622,31 +629,11 @@ class AdminService {
       if (params.date) searchParams.append('date', params.date)
       const query = searchParams.toString()
 
-      const candidates = [
-        query ? `notifications?${query}` : 'notifications',
-        query ? `admin/notifications?${query}` : 'admin/notifications',
-        query ? `notifications/admin?${query}` : 'notifications/admin',
-        query ? `admin/notifications/list?${query}` : 'admin/notifications/list'
-      ]
+      // Utiliser seulement l'endpoint qui existe dans le backend
+      const endpoint = query ? `notifications?${query}` : 'notifications'
 
-      let source: any = null
-
-      for (const endpoint of candidates) {
-        try {
-          const response = await apiClient.get<any>(endpoint)
-          source = response?.data && typeof response.data === 'object' ? response.data : response
-          break
-        } catch (candidateError: any) {
-          const status = Number(candidateError?.status || 0)
-          if (status === 404 || status === 500 || status === 502 || status === 503 || status === 504) {
-            continue
-          }
-          if (!status) {
-            continue
-          }
-          throw candidateError
-        }
-      }
+      const response = await apiClient.get<any>(endpoint)
+      const source = response?.data && typeof response.data === 'object' ? response.data : response
 
       if (!source) {
         return {
@@ -1149,7 +1136,5 @@ class AdminService {
 // Export singleton instance
 export const adminService = new AdminService()
 export default adminService
-
-
 
 

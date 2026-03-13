@@ -312,8 +312,6 @@ class BadgeService {
         return 'bg-yellow-100 text-yellow-800';
       case 'chef_departement':
         return 'bg-indigo-100 text-indigo-800';
-      case 'comptable':
-        return 'bg-cyan-100 text-cyan-800';
       case 'stagiaire':
         return 'bg-slate-100 text-slate-800';
       case 'hr':
@@ -335,8 +333,6 @@ class BadgeService {
         return 'Manager';
       case 'chef_departement':
         return 'Chef de departement';
-      case 'comptable':
-        return 'Comptable';
       case 'stagiaire':
         return 'Stagiaire';
       case 'hr':
