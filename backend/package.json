@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "chmod +x render-build-fix-v2.sh && ./render-build-fix-v2.sh",
+    "build": "chmod +x render-build-fix-v3.sh && ./render-build-fix-v3.sh",
     "build:fix": "ls -la prisma/ && npx prisma generate --schema=./prisma/schema.prisma",
     "postinstall": "npx prisma generate --schema=./prisma/schema.prisma",
     "db:check": "node scripts/check-db-connection.js",
@@ -44,4 +44,3 @@
   "prisma": {
     "seed": "node prisma/seed.js"
   }
-}
