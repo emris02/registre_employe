@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "prisma generate",
+    "build": "chmod +x render-build-fix.sh && ./render-build-fix.sh",
+    "build:simple": "prisma generate --schema=./prisma/schema.prisma && echo 'Build completed'",
+    "postinstall": "prisma generate --schema=./prisma/schema.prisma",
     "db:check": "node scripts/check-db-connection.js",
     "db:users": "node scripts/list-users.js",
     "db:pull": "prisma db pull --schema prisma/schema.prisma",

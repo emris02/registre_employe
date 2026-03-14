@@ -4476,7 +4476,7 @@ app.post('/api/scan/unlock/request', validateToken, async (req, res) => {
     }
 
     if (!isValid) {
-      return res.status(403).json({ success: false, message: 'Code psin incorrect Code pin incorrect déverrouillage non autorisé' });
+      return res.status(403).json({ success: false, message: 'Code pin incorrect déverrouillage non autorisé' });
     }
 
     const fingerprintSeed = String(effectiveDeviceInfo?.fingerprint || effectiveDeviceInfo?.id || '').trim()
