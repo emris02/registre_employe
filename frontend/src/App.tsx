@@ -6,7 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage'
-import { AdminResetPasswordPage } from './pages/admin/AdminResetPasswordPage'
+import AdminResetPasswordPage from './pages/admin/AdminResetPasswordPage'
 
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminProfilePage from './pages/admin/AdminProfilePage'
