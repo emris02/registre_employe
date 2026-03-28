@@ -27,7 +27,21 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          router: ['react-router-dom']
+        }
+      }
+    }
+  },
+  define: {
+    // Éviter d'exposer les variables d'environnement dans le build
+    'import.meta.env.VITE_NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+    'import.meta.env.VITE_DEBUG': JSON.stringify('false'),
+    'import.meta.env.VITE_LOG_LEVEL': JSON.stringify('error')
   }
 })
 
