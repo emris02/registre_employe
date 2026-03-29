@@ -123,6 +123,12 @@
   color: #2563eb;
 }
 
+.login-logo-image {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
 .login-logo i {
   font-size: 2rem;
   background: linear-gradient(135deg, #2563eb, #f59e0b);
@@ -311,6 +317,33 @@
 .login-footer {
   border-top: 1px solid #e5e7eb;
   padding-top: 20px;
+}
+
+.forgot-password-link {
+  text-align: center;
+}
+
+.forgot-password {
+  color: #64748b;
+  text-decoration: none;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.forgot-password:hover {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  transform: translateY(-1px);
+}
+
+.forgot-password i {
+  font-size: 0.85rem;
 }
 
 .demo-accounts {

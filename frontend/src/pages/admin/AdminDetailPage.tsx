@@ -1115,13 +1115,8 @@ const AdminDetailPage: React.FC = () => {
                       <div className="flex items-center space-x-2 flex-shrink-0">
                         <button
                           type="button"
-                          onClick={() => {
-                            if (formData.contrat_pdf_url) {
-                              window.open(formData.contrat_pdf_url, '_blank')
-                            }
-                          }}
+                          onClick={() => formData.contrat_pdf_url && window.open(formData.contrat_pdf_url, '_blank')}
                           className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors flex items-center space-x-1"
-                          disabled={!formData.contrat_pdf_url}
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1132,8 +1127,8 @@ const AdminDetailPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
+                            const link = document.createElement('a')
                             if (formData.contrat_pdf_url) {
-                              const link = document.createElement('a')
                               link.href = formData.contrat_pdf_url
                               link.download = extractFileName(formData.contrat_pdf_url)
                               document.body.appendChild(link)
@@ -1142,7 +1137,6 @@ const AdminDetailPage: React.FC = () => {
                             }
                           }}
                           className="px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors flex items-center space-x-1"
-                          disabled={!formData.contrat_pdf_url}
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

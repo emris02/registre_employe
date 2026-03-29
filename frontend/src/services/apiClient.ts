@@ -5,6 +5,12 @@ export interface ApiError {
 }
 
 const resolveDefaultBaseUrl = (): string => {
+  // En production, utiliser toujours l'URL relative pour éviter d'exposer les secrets
+  if (import.meta.env.PROD) {
+    return '/api';
+  }
+  
+  // En développement, utiliser la variable d'environnement si disponible
   const rawEnvValue = String(import.meta.env?.VITE_API_URL ?? '').trim();
   if (!rawEnvValue) return '/api';
 

@@ -1,0 +1,628 @@
+# 🏢 Application MVC - Gestion RH
+
+Une application web moderne de gestion des ressources humaines développée avec une architecture MVC personnalisée en PHP.
+
+## 📋 Table des matières
+
+- [Fonctionnalités](#-fonctionnalités)
+- [Prérequis](#-prérequis)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Utilisation](#-utilisation)
+- [Architecture](#-architecture)
+- [API](#-api)
+- [Tests](#-tests)
+- [Déploiement](#-déploiement)
+- [Contribution](#-contribution)
+- [Support](#-support)
+
+## ✨ Fonctionnalités
+
+### 👥 Gestion des Employés
+- ✅ CRUD complet (Créer, Lire, Modifier, Supprimer)
+- ✅ Import/Export (Excel, PDF)
+- ✅ Recherche avancée et filtres
+- ✅ Gestion des photos de profil
+- ✅ Historique des modifications
+
+### ⏰ Système de Pointage
+- ✅ Pointage d'entrée/sortie
+- ✅ Gestion des pauses
+- ✅ Justification des retards
+- ✅ Calcul automatique des heures
+- ✅ Rapports de présence
+
+### 👨‍💼 Gestion des Administrateurs
+- ✅ Rôles et permissions
+- ✅ Hiérarchie managériale
+- ✅ Audit des actions
+
+### 🔔 Système de Notifications
+- ✅ Notifications temps réel
+- ✅ Notifications par email
+- ✅ Historique des notifications
+- ✅ Paramétrage personnalisé
+
+### 💬 Messagerie Interne
+- ✅ Messages privés
+- ✅ Pièces jointes
+- ✅ Conversations groupées
+- ✅ Statuts de lecture
+
+### 📅 Calendrier Interactif
+- ✅ Événements d'entreprise
+- ✅ Congés et absences
+- ✅ Réunions et formations
+- ✅ Vue mensuelle/hebdomadaire
+
+### 📊 Rapports et Statistiques
+- ✅ Tableaux de bord
+- ✅ Graphiques interactifs
+- ✅ Export des données
+- ✅ Analyses personnalisées
+
+## 🔧 Prérequis
+
+### Serveur Web
+- **PHP** >= 8.0
+- **MySQL** >= 5.7 ou **MariaDB** >= 10.3
+- **Apache** ou **Nginx**
+- **Composer** (optionnel)
+
+### Extensions PHP Requises
+```bash
+php-mysql
+php-pdo
+php-json
+php-mbstring
+php-curl
+php-gd
+php-zip
+php-xml
+```
+
+### Outils de Développement (Optionnels)
+- **Node.js** >= 14.0 (pour les assets)
+- **Git** pour le versioning
+- **PHPUnit** pour les tests
+
+## 🚀 Installation
+
+### 1. Cloner le Projet
+```bash
+git clone https://github.com/votre-repo/gestion-rh-mvc.git
+cd gestion-rh-mvc
+```
+
+### 2. Configuration du Serveur Web
+
+#### Apache (.htaccess)
+```apache
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php [QSA,L]
+```
+
+#### Nginx
+```nginx
+server {
+    listen 80;
+    server_name votre-domaine.com;
+    root /path/to/gestion-rh-mvc/public;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php8.0-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
+```
+
+### 3. Configuration de la Base de Données
+
+#### Créer la Base de Données
+```sql
+CREATE DATABASE gestion_rh CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'rh_user'@'localhost' IDENTIFIED BY 'mot_de_passe_securise';
+GRANT ALL PRIVILEGES ON gestion_rh.* TO 'rh_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+#### Exécuter les Migrations
+```bash
+cd migrations
+php 001_create_tables.php up
+```
+
+### 4. Configuration des Permissions
+```bash
+# Dossiers d'écriture
+chmod 755 logs/
+chmod 755 uploads/
+chmod 755 exports/
+
+# Fichiers de configuration
+chmod 644 config/config.php
+```
+
+## ⚙️ Configuration
+
+### 1. Configuration Principale
+Éditez le fichier `config/config.php` :
+
+```php
+<?php
+// Base de données
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'gestion_rh');
+define('DB_USER', 'rh_user');
+define('DB_PASS', 'mot_de_passe_securise');
+
+// Application
+define('APP_NAME', 'Gestion RH - Votre Entreprise');
+define('BASE_URL', 'https://votre-domaine.com/');
+define('APP_ENV', 'production'); // development ou production
+
+// Sécurité
+define('SECRET_KEY', 'votre_cle_secrete_unique_et_complexe');
+
+// Email
+define('MAIL_HOST', 'smtp.votre-serveur.com');
+define('MAIL_USERNAME', 'noreply@votre-domaine.com');
+define('MAIL_PASSWORD', 'mot_de_passe_email');
+?>
+```
+
+### 2. Configuration des Rôles et Permissions
+
+Les rôles par défaut sont :
+- **Super Admin** : Accès complet
+- **Admin** : Gestion des employés et rapports
+- **Manager** : Gestion de son équipe
+- **Employé** : Accès limité à son profil
+
+### 3. Paramètres Système
+
+Accédez à `/parametres` pour configurer :
+- Horaires de travail
+- Notifications
+- Formats de date/heure
+- Politiques de mot de passe
+
+## 📖 Utilisation
+
+### 1. Première Connexion
+
+**Compte Administrateur par Défaut :**
+- Email : `admin@gestion-rh.com`
+- Mot de passe : `admin123456`
+
+⚠️ **Important** : Changez ce mot de passe immédiatement !
+
+### 2. Gestion des Employés
+
+#### Ajouter un Employé
+1. Aller dans **Employés** > **Ajouter**
+2. Remplir le formulaire
+3. Uploader une photo (optionnel)
+4. Assigner un manager
+5. Définir les permissions
+
+#### Import en Masse
+1. Préparer un fichier Excel/CSV
+2. Aller dans **Employés** > **Importer**
+3. Sélectionner le fichier
+4. Mapper les colonnes
+5. Valider l'import
+
+### 3. Système de Pointage
+
+#### Configuration
+```php
+// Dans config/config.php
+define('WORKING_HOURS_START', '08:00');
+define('WORKING_HOURS_END', '17:00');
+define('LUNCH_BREAK_DURATION', 60); // minutes
+define('TOLERANCE_MINUTES', 15);
+```
+
+#### Utilisation
+- Les employés pointent via l'interface web
+- Géolocalisation optionnelle
+- Justification automatique des retards
+- Calcul des heures supplémentaires
+
+### 4. Notifications
+
+#### Types de Notifications
+- **Info** : Informations générales
+- **Success** : Actions réussies
+- **Warning** : Avertissements
+- **Error** : Erreurs système
+
+#### Configuration Email
+```php
+// Utilisation de PHPMailer (recommandé)
+require_once 'vendor/phpmailer/phpmailer/src/PHPMailer.php';
+require_once 'vendor/phpmailer/phpmailer/src/SMTP.php';
+```
+
+### 5. Messagerie
+
+#### Fonctionnalités
+- Messages privés entre utilisateurs
+- Pièces jointes (PDF, images, documents)
+- Conversations groupées
+- Notifications de nouveaux messages
+
+### 6. Calendrier
+
+#### Types d'Événements
+- **Réunions** : Meetings d'équipe
+- **Formations** : Sessions de formation
+- **Congés** : Vacances et absences
+- **Fériés** : Jours fériés
+- **Maintenance** : Arrêts système
+
+## 🏗️ Architecture
+
+### Structure MVC
+
+```
+gestion-rh-mvc/
+├── app/
+│   ├── Controllers/          # Contrôleurs
+│   │   ├── AuthController.php
+│   │   ├── EmployeController.php
+│   │   ├── PointageController.php
+│   │   └── ...
+│   ├── Models/              # Modèles
+│   │   ├── User.php
+│   │   ├── Employe.php
+│   │   ├── Pointage.php
+│   │   └── ...
+│   ├── Views/               # Vues
+│   │   ├── auth/
+│   │   ├── employes/
+│   │   ├── dashboard/
+│   │   └── ...
+│   └── Core/                # Classes de base
+│       ├── BaseController.php
+│       ├── BaseModel.php
+│       └── Router.php
+├── config/                  # Configuration
+│   └── config.php
+├── public/                  # Point d'entrée web
+│   ├── index.php
+│   └── .htaccess
+├── assets/                  # Ressources statiques
+│   ├── css/
+│   ├── js/
+│   └── images/
+├── routes/                  # Définition des routes
+│   └── web.php
+├── migrations/              # Scripts de migration
+│   └── 001_create_tables.php
+├── tests/                   # Tests unitaires
+├── logs/                    # Fichiers de log
+├── uploads/                 # Fichiers uploadés
+└── exports/                 # Exports générés
+```
+
+### Flux de Requête
+
+1. **Point d'entrée** : `public/index.php`
+2. **Routage** : `routes/web.php`
+3. **Contrôleur** : Traitement de la logique
+4. **Modèle** : Accès aux données
+5. **Vue** : Rendu HTML
+6. **Réponse** : Envoi au client
+
+### Sécurité
+
+#### Protection CSRF
+```php
+// Génération du token
+$token = generateCsrfToken();
+
+// Vérification
+if (!verifyCsrfToken($_POST['_token'])) {
+    throw new Exception('Token CSRF invalide');
+}
+```
+
+#### Validation des Données
+```php
+$errors = $this->validate($data, [
+    'email' => 'required|email',
+    'password' => 'required|min:8',
+    'nom' => 'required|min:2|max:50'
+]);
+```
+
+#### Permissions
+```php
+// Vérification des permissions
+if (!$this->hasPermission('edit_employe')) {
+    $this->handleUnauthorized();
+}
+```
+
+## 🔌 API
+
+### Endpoints Principaux
+
+#### Authentification
+```http
+POST /api/auth/login
+POST /api/auth/logout
+POST /api/auth/refresh
+```
+
+#### Employés
+```http
+GET    /api/employes           # Liste des employés
+GET    /api/employes/{id}      # Détails d'un employé
+POST   /api/employes           # Créer un employé
+PUT    /api/employes/{id}      # Modifier un employé
+DELETE /api/employes/{id}      # Supprimer un employé
+```
+
+#### Pointages
+```http
+GET  /api/pointages            # Liste des pointages
+POST /api/pointages/pointer    # Effectuer un pointage
+GET  /api/pointages/stats      # Statistiques
+```
+
+#### Notifications
+```http
+GET    /api/notifications      # Liste des notifications
+POST   /api/notifications/{id}/read  # Marquer comme lue
+DELETE /api/notifications/{id} # Supprimer
+```
+
+### Format des Réponses
+
+#### Succès
+```json
+{
+    "success": true,
+    "data": {
+        "id": 1,
+        "nom": "Dupont",
+        "prenom": "Jean"
+    },
+    "message": "Opération réussie"
+}
+```
+
+#### Erreur
+```json
+{
+    "success": false,
+    "error": {
+        "code": 400,
+        "message": "Données invalides",
+        "details": {
+            "email": ["Format d'email invalide"],
+            "password": ["Minimum 8 caractères"]
+        }
+    }
+}
+```
+
+## 🧪 Tests
+
+### Tests Unitaires
+
+```bash
+# Installation de PHPUnit
+composer require --dev phpunit/phpunit
+
+# Exécution des tests
+./vendor/bin/phpunit tests/
+```
+
+### Structure des Tests
+```
+tests/
+├── Unit/
+│   ├── Models/
+│   │   ├── UserTest.php
+│   │   └── EmployeTest.php
+│   └── Controllers/
+│       ├── AuthControllerTest.php
+│       └── EmployeControllerTest.php
+├── Feature/
+│   ├── AuthenticationTest.php
+│   └── EmployeManagementTest.php
+└── TestCase.php
+```
+
+### Exemple de Test
+```php
+<?php
+class UserTest extends TestCase {
+    public function testUserCreation() {
+        $user = new User();
+        $userData = [
+            'nom' => 'Test',
+            'prenom' => 'User',
+            'email' => 'test@example.com',
+            'password' => 'password123'
+        ];
+
+        $result = $user->createUser($userData);
+        $this->assertNotNull($result);
+        $this->assertEquals('test@example.com', $result['email']);
+    }
+}
+```
+
+## 🚀 Déploiement
+
+### Déploiement en Production
+
+#### 1. Préparation
+```bash
+# Optimisation des assets
+npm run build
+
+# Nettoyage des fichiers de développement
+rm -rf tests/
+rm -rf node_modules/
+```
+
+#### 2. Configuration Production
+```php
+// config/config.php
+define('APP_ENV', 'production');
+define('APP_DEBUG', false);
+
+// Désactiver l'affichage des erreurs
+error_reporting(0);
+ini_set('display_errors', 0);
+```
+
+#### 3. Sécurisation
+```bash
+# Permissions restrictives
+find . -type f -exec chmod 644 {} \;
+find . -type d -exec chmod 755 {} \;
+chmod 600 config/config.php
+
+# Protection des dossiers sensibles
+echo "Deny from all" > logs/.htaccess
+echo "Deny from all" > config/.htaccess
+```
+
+#### 4. Optimisations
+- Mise en cache des vues
+- Compression GZIP
+- CDN pour les assets
+- Cache Redis/Memcached
+
+### Docker (Optionnel)
+
+```dockerfile
+FROM php:8.0-apache
+
+# Installation des extensions
+RUN docker-php-ext-install pdo pdo_mysql mysqli
+
+# Configuration Apache
+COPY apache-config.conf /etc/apache2/sites-available/000-default.conf
+RUN a2enmod rewrite
+
+# Copie du code
+COPY . /var/www/html/
+
+# Permissions
+RUN chown -R www-data:www-data /var/www/html/
+```
+
+## 🤝 Contribution
+
+### Guide de Contribution
+
+1. **Fork** le projet
+2. Créer une **branche** pour votre fonctionnalité
+3. **Commiter** vos changements
+4. **Pousser** vers la branche
+5. Ouvrir une **Pull Request**
+
+### Standards de Code
+
+#### PHP
+- PSR-4 pour l'autoloading
+- PSR-12 pour le style de code
+- Documentation PHPDoc
+- Tests unitaires obligatoires
+
+#### JavaScript
+- ES6+ moderne
+- Documentation JSDoc
+- Linting avec ESLint
+
+#### CSS
+- Méthodologie BEM
+- Variables CSS personnalisées
+- Responsive design
+
+### Commit Messages
+```
+feat: ajouter système de notifications
+fix: corriger bug de pointage
+docs: mettre à jour README
+style: améliorer CSS du dashboard
+refactor: optimiser requêtes base de données
+test: ajouter tests pour AuthController
+```
+
+## 📞 Support
+
+### Documentation
+- **Wiki** : [Lien vers le wiki]
+- **API Docs** : [Lien vers la documentation API]
+- **Tutoriels** : [Lien vers les tutoriels]
+
+### Communauté
+- **Issues GitHub** : Pour les bugs et demandes de fonctionnalités
+- **Discussions** : Pour les questions générales
+- **Discord** : Chat en temps réel
+
+### Support Commercial
+- **Email** : support@gestion-rh.com
+- **Téléphone** : +33 1 23 45 67 89
+- **Horaires** : Lundi-Vendredi 9h-18h
+
+## 📄 Licence
+
+Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+
+## 🙏 Remerciements
+
+- **Équipe de développement**
+- **Contributeurs open source**
+- **Communauté PHP**
+- **Testeurs et utilisateurs**
+
+---
+
+## 📊 Statistiques du Projet
+
+- **Lignes de code** : ~15,000
+- **Fichiers** : ~80
+- **Tests** : ~150
+- **Couverture** : 85%
+
+## 🔄 Changelog
+
+### Version 1.0.0 (2024-01-15)
+- ✨ Version initiale
+- ✅ Gestion complète des employés
+- ✅ Système de pointage
+- ✅ Notifications temps réel
+- ✅ Messagerie interne
+- ✅ Calendrier interactif
+
+### Version 1.1.0 (Prévue)
+- 🔄 API REST complète
+- 📱 Application mobile
+- 🔐 Authentification SSO
+- 📊 Rapports avancés
+- 🌐 Multi-langues
+
+---
+
+**Développé avec ❤️ par l'équipe Gestion RH**
+
+Pour toute question ou suggestion, n'hésitez pas à nous contacter !

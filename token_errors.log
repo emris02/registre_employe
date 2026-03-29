@@ -1,0 +1,4 @@
+[13-Jun-2025 12:03:41 Europe/Paris] PHP Fatal error:  Uncaught Error: Undefined constant "DB_HOST" in C:\wamp64\www\registre_employer\validate_badge.php:94
+Stack trace:
+#0 {main}
+  thrown in C:\wamp64\www\registre_employer\validate_badge.php on line 94

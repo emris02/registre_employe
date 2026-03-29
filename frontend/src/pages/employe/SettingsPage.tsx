@@ -37,10 +37,16 @@ const SettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
   const [profileForm, setProfileForm] = useState(DEFAULT_PROFILE_FORM)
   const [settingsForm, setSettingsForm] = useState<DashboardSettings | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: ''
+  })
 
   const isUnauthorizedError = useCallback((err: unknown) => {
     const payload = err as { status?: number; message?: string }
@@ -141,6 +147,51 @@ const SettingsPage: React.FC = () => {
     }
   }
 
+  const handleSavePassword = async () => {
+    try {
+      setSavingPassword(true)
+      setError(null)
+      setSuccess(null)
+
+      if (!passwordForm.current_password || !passwordForm.new_password || !passwordForm.confirm_password) {
+        setError('Tous les champs sont requis')
+        return
+      }
+
+      if (passwordForm.new_password !== passwordForm.confirm_password) {
+        setError('Les mots de passe ne correspondent pas')
+        return
+      }
+
+      if (passwordForm.new_password.length < 8) {
+        setError('Le mot de passe doit contenir au moins 8 caractères')
+        return
+      }
+
+      const result = await apiClient.put('/auth/password', {
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password,
+        confirmPassword: passwordForm.confirm_password
+      }) as { success: boolean; error?: string }
+
+      if (!result.success) {
+        throw new Error(result.error || 'Mise à jour du mot de passe impossible')
+      }
+
+      setSuccess('Mot de passe mis à jour avec succès')
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        confirm_password: ''
+      })
+    } catch (saveError: unknown) {
+      console.error('Erreur sauvegarde mot de passe:', saveError)
+      setError('Erreur lors de la mise à jour du mot de passe')
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
   const handleSaveSettings = async () => {
     if (!settingsForm) return
 
@@ -190,13 +241,6 @@ const SettingsPage: React.FC = () => {
       <section className="php-card">
         <div className="php-card-header">
           <h2 className="php-card-title">Mon profil personnel</h2>
-          <button
-            onClick={() => void handleSaveProfile()}
-            disabled={savingProfile}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {savingProfile ? 'Enregistrement...' : 'Enregistrer profil'}
-          </button>
         </div>
         <div className="php-card-body grid grid-cols-1 md:grid-cols-2 gap-4">
           <input
@@ -260,13 +304,6 @@ const SettingsPage: React.FC = () => {
       <section className="php-card">
         <div className="php-card-header">
           <h2 className="php-card-title">Preferences utilisateur</h2>
-          <button
-            onClick={() => void handleSaveSettings()}
-            disabled={savingSettings}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {savingSettings ? 'Enregistrement...' : 'Enregistrer preferences'}
-          </button>
         </div>
         <div className="php-card-body php-list">
           <div className="php-list-item">
@@ -344,6 +381,51 @@ const SettingsPage: React.FC = () => {
               placeholder="Auto-refresh (sec)"
             />
           </div>
+        </div>
+      </section>
+
+      <section className="php-card">
+        <div className="php-card-header">
+          <h2 className="php-card-title">Changer le mot de passe</h2>
+        </div>
+        <div className="php-card-body space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe actuel</label>
+            <input
+              type="password"
+              value={passwordForm.current_password}
+              onChange={(e) => setPasswordForm(prev => ({ ...prev, current_password: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Entrez votre mot de passe actuel"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe</label>
+            <input
+              type="password"
+              value={passwordForm.new_password}
+              onChange={(e) => setPasswordForm(prev => ({ ...prev, new_password: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Entrez votre nouveau mot de passe"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe</label>
+            <input
+              type="password"
+              value={passwordForm.confirm_password}
+              onChange={(e) => setPasswordForm(prev => ({ ...prev, confirm_password: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Confirmez votre nouveau mot de passe"
+            />
+          </div>
+          <button
+            onClick={handleSavePassword}
+            disabled={savingPassword}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {savingPassword ? 'Mise à jour...' : 'Mettre à jour le mot de passe'}
+          </button>
         </div>
       </section>
 

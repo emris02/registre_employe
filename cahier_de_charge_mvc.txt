@@ -1,0 +1,105 @@
+# Cahier des charges pour la transformation du projet en architecture MVC
+
+## Introduction
+Ce document décrit les spécifications nécessaires pour transformer le projet existant en une architecture MVC (Modèle-Vue-Contrôleur). L'objectif est de structurer le code pour améliorer la maintenabilité, la scalabilité et la séparation des préoccupations.
+
+## Objectifs
+- Refactoriser le projet pour adopter une architecture MVC.
+- Séparer les responsabilités entre les modèles, les vues et les contrôleurs.
+- Faciliter l'ajout de nouvelles fonctionnalités.
+- Améliorer la lisibilité et la gestion du code.
+- Intégrer des bonnes pratiques de développement.
+
+## Structure du projet MVC
+
+### 1. Dossiers principaux
+- **app/** : Contient les fichiers principaux de l'application.
+  - **Controllers/** : Contient les contrôleurs.
+  - **Models/** : Contient les modèles.
+  - **Views/** : Contient les vues.
+- **config/** : Contient les fichiers de configuration (base de données, routes, etc.).
+- **public/** : Contient les fichiers accessibles publiquement (index.php, assets, etc.).
+- **assets/** : Contient les fichiers CSS, JS, images.
+- **logs/** : Contient les fichiers de logs.
+- **migrations/** : Contient les fichiers de migration pour la base de données.
+- **tests/** : Contient les tests unitaires et fonctionnels.
+
+### 2. Fichiers principaux
+- **public/index.php** : Point d'entrée de l'application.
+- **app/Controllers/** : Contient les classes des contrôleurs (exemple : EmployeController.php).
+- **app/Models/** : Contient les classes des modèles (exemple : Employe.php).
+- **app/Views/** : Contient les fichiers de vue (exemple : employe_dashboard.php).
+- **config/config.php** : Configuration générale (base de données, constantes).
+- **routes/web.php** : Définition des routes.
+
+## Fonctionnalités existantes à intégrer
+
+### 1. Gestion des employés
+- Ajouter, modifier, supprimer des employés.
+- Afficher les informations des employés.
+- Exporter les données des employés (PDF, Excel).
+
+### 2. Gestion des administrateurs
+- Ajouter, modifier, supprimer des administrateurs.
+- Afficher les informations des administrateurs.
+
+### 3. Gestion des pointages
+- Afficher l'historique des pointages.
+- Justifier les retards.
+- Nettoyer les badges expirés.
+
+### 4. Notifications
+- Afficher les notifications.
+- Marquer les notifications comme lues.
+
+### 5. Messagerie
+- Envoyer et recevoir des messages.
+- Afficher les détails des messages.
+
+### 6. Calendrier
+- Ajouter, modifier, supprimer des événements.
+- Afficher les événements dans un calendrier interactif.
+
+## Points techniques
+
+### 1. Base de données
+- Refactoriser les tables existantes pour correspondre aux modèles.
+- Ajouter des migrations pour gérer les modifications de la base de données.
+
+### 2. Routes
+- Utiliser un fichier de routes pour définir les URL et les actions associées.
+- Exemple :
+  ```php
+  $router->get('/employes', 'EmployeController@index');
+  $router->post('/employes', 'EmployeController@store');
+  ```
+
+### 3. Contrôleurs
+- Chaque contrôleur doit gérer une fonctionnalité spécifique.
+- Exemple : EmployeController pour la gestion des employés.
+
+### 4. Modèles
+- Les modèles doivent représenter les entités de la base de données.
+- Exemple : Employe.php pour la table des employés.
+
+### 5. Vues
+- Les vues doivent être séparées du code métier.
+- Utiliser un moteur de template (exemple : Twig).
+
+### 6. Sécurité
+- Protéger les formulaires contre les attaques CSRF.
+- Valider et nettoyer les entrées utilisateur.
+- Gérer les permissions et les rôles.
+
+### 7. Tests
+- Ajouter des tests unitaires pour les modèles.
+- Ajouter des tests fonctionnels pour les contrôleurs.
+
+## Livrables
+- Structure du projet en MVC.
+- Documentation des routes et des fonctionnalités.
+- Tests unitaires et fonctionnels.
+- Scripts de migration pour la base de données.
+
+## Conclusion
+Ce cahier des charges servira de guide pour la refactorisation du projet en architecture MVC. Il est essentiel de suivre les bonnes pratiques pour garantir la qualité et la pérennité du code.

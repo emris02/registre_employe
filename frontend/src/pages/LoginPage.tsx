@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../services/authService'
 import '../styles/pages/LoginPage.css'
 
@@ -71,7 +71,7 @@ const LoginPage: React.FC = () => {
         <div className="login-card">
           <div className="login-header">
             <div className="login-logo">
-              <i className="fas fa-qrcode"></i>
+              <img src="/xpertpro.png" alt="Xpert Pro" className="login-logo-image" />
               <span>Xpert Pro</span>
             </div>
             <h2>Connexion</h2>
@@ -149,15 +149,14 @@ const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* <div className="login-footer">
-
-            <div className="login-links">
-              <a href="/" className="back-home">
-                <i className="fas fa-arrow-left"></i>
-                Retour a l'accueil
-              </a>
+          <div className="login-footer">
+            <div className="forgot-password-link">
+              <Link to="/forgot-password" className="forgot-password">
+                <i className="fas fa-key"></i>
+                Mot de passe oublié ?
+              </Link>
             </div>
-          </div> */}
+          </div>
         </div>
       </div>
     </div>

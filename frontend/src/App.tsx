@@ -4,6 +4,9 @@ import DashboardLayout from './components/layout/DashboardLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 // import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
+import ResetPasswordPage from './pages/auth/ResetPasswordPage'
+import AdminResetPasswordPage from './pages/admin/AdminResetPasswordPage'
 
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminProfilePage from './pages/admin/AdminProfilePage'
@@ -48,6 +51,8 @@ function App() {
       <Routes>
         {/* <Route path="/" element={<LandingPage />} /> */}
         <Route path="/" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route 
           path="/scan" 
           element={
@@ -97,6 +102,7 @@ function App() {
           <Route path="rapports" element={<AdminReportsPage />} />
           <Route path="parametres" element={<AdminSettingsPage />} />
           <Route path="notifications" element={<AdminNotificationsPage />} />
+          <Route path="reset-password" element={<AdminResetPasswordPage />} />
 
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
