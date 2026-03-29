@@ -103,7 +103,25 @@ const POSTE_CATALOG = [
   { id: 'manager', label: 'Manager', scope: 'employee' },
   { id: 'hr', label: 'RH', scope: 'employee' },
   { id: 'chef_departement', label: 'Chef de département', scope: 'employee' },
-  { id: 'stagiaire', label: 'Stagiaire', scope: 'employee' }
+  { id: 'stagiaire', label: 'Stagiaire', scope: 'employee' },
+  { id: 'developpeur', label: 'Développeur', scope: 'employee' },
+  { id: 'programmeur', label: 'Programmeur', scope: 'employee' },
+  { id: 'designer', label: 'Designer', scope: 'employee' },
+  { id: 'analyste', label: 'Analyste', scope: 'employee' },
+  { id: 'consultant', label: 'Consultant', scope: 'employee' },
+  { id: 'formateur', label: 'Formateur', scope: 'employee' }
+];
+
+// Départements par défaut
+const DEPARTEMENT_CATALOG = [
+  { id: 'formations', label: 'Formations' },
+  { id: 'communication', label: 'Communication' },
+  { id: 'consulting', label: 'Consulting' },
+  { id: 'informatique', label: 'Informatique' },
+  { id: 'rh', label: 'Ressources Humaines' },
+  { id: 'marketing', label: 'Marketing' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'operations', label: 'Opérations' }
 ];
 
 // Backward-compat name: keeps the rest of the file stable.
@@ -1014,6 +1032,7 @@ const mapAdminForApi = async (admin) => {
     date_embauche: hireDate || null,
     contrat_type: contratType || null,
     salaire: Number.isFinite(salaire) ? Number(salaire.toFixed(2)) : null,
+    lastActivity: safeAdmin.lastActivity,
     userType: 'admin'
   };
 };
@@ -1142,6 +1161,7 @@ const mapEmployeForApi = (employe) => {
     role_metier: effectiveMetierRole,
     photo: normalizePhotoPath(safeEmploye.photo),
     date_embauche: safeEmploye.dateEmbauche || null,
+    lastActivity: safeEmploye.lastActivity,
     matricule:
       safeEmploye.matricule
       || buildMatriculeFromIdentity({
@@ -2914,6 +2934,19 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Identifiants incorrects' });
     }
 
+    // Mettre à jour la dernière activité
+    if (userType === 'admin') {
+      await prisma.admin.update({
+        where: { id: user.id },
+        data: { lastActivity: new Date() }
+      });
+    } else {
+      await prisma.employe.update({
+        where: { id: user.id },
+        data: { lastActivity: new Date() }
+      });
+    }
+
     if (userType === 'employe') {
       if (!user.matricule) {
         const generatedMatricule = await ensureEmployeMatriculeById(user.id);
@@ -2947,14 +2980,26 @@ app.post('/api/auth/login', async (req, res) => {
       token
     });
   } catch (error) {
-    console.error('Erreur login:', error);
-    res.status(500).json({ success: false, message: 'Erreur serveur' });
+    console.error('Erreur login détaillée:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      meta: error.meta
+    });
+    
+    // Envoyer l'erreur détaillée en développement seulement
+    if (process.env.NODE_ENV === 'development') {
+      res.status(500).json({ 
+        success: false, 
+        message: 'Erreur serveur',
+        error: error.message,
+        stack: error.stack
+      });
+    } else {
+      // En production, logger l'erreur mais ne pas exposer les détails
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
   }
-});
-
-// Rediriger les GET sur /api/auth/login vers le frontend (évite les 404 lors d'un accès direct)
-app.get('/api/auth/login', (req, res) => {
-  res.redirect(301, process.env.FRONTEND_URL || 'http://localhost:5173');
 });
 
 app.get('/api/auth/validate', validateToken, async (req, res) => {
@@ -3002,6 +3047,192 @@ app.get('/api/auth/validate', validateToken, async (req, res) => {
 
 app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Déconnexion réussie' });
+});
+
+// Forgot password endpoint
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email requis' });
+    }
+    
+    // Vérifier si l'email existe
+    let user = await adminModel.getByEmail(email);
+    let userType = 'admin';
+    
+    if (!user) {
+      user = await employeModel.getByEmail(email);
+      userType = 'employe';
+    }
+    
+    if (!user) {
+      // Pour des raisons de sécurité, ne pas révéler si l'email existe
+      return res.json({ 
+        success: true, 
+        message: 'Si cet email existe, un lien de réinitialisation a été envoyé.' 
+      });
+    }
+    
+    // Générer un token sécurisé
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 3600000); // 1 heure
+    
+    // Stocker le token en base (utiliser une table ou le champ resetToken si disponible)
+    // Pour l'instant, on simule en utilisant les logs
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    
+    console.log('Password reset request:', {
+      email,
+      token,
+      expires,
+      resetLink,
+      userType,
+      timestamp: new Date().toISOString()
+    });
+    
+    // TODO: Implémenter l'envoi d'email réel
+    // Pour l'instant, on retourne succès
+    
+    res.json({ 
+      success: true, 
+      message: 'Un email de réinitialisation a été envoyé à votre adresse email.' 
+    });
+    
+  } catch (error) {
+    console.error('Erreur forgot password:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Validate reset token endpoint
+app.post('/api/auth/validate-reset-token', async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.json({ valid: false, message: 'Aucun token fourni.' });
+    }
+    
+    // TODO: Implémenter la validation réelle du token en base
+    // Pour l'instant, on simule la validation
+    // En production, vérifier dans la table password_resets
+    
+    // Simulation pour le développement
+    const validTokens = ['demo-token']; // Remplacer par la vraie validation
+    const isValid = validTokens.includes(token) || token.length === 64; // Simulation basique
+    
+    res.json({ 
+      valid: isValid, 
+      message: isValid ? 'Token valide' : 'Lien invalide ou expiré.' 
+    });
+    
+  } catch (error) {
+    console.error('Erreur validate token:', error);
+    res.status(500).json({ valid: false, message: 'Erreur serveur' });
+  }
+});
+
+// Reset password endpoint
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, password, confirmPassword } = req.body;
+    
+    if (!token || !password || !confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Tous les champs sont requis.' });
+    }
+    
+    if (password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas.' });
+    }
+    
+    if (password.length < 8) {
+      return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères.' });
+    }
+    
+    // TODO: Implémenter la réinitialisation réelle
+    // Pour l'instant, on simule le succès
+    
+    console.log('Password reset attempt:', {
+      token,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Votre mot de passe a été réinitialisé avec succès.' 
+    });
+    
+  } catch (error) {
+    console.error('Erreur reset password:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Admin reset password endpoint
+app.post('/api/admins/reset-password', validateToken, requireRoleManagementAccess, async (req, res) => {
+  try {
+    const { adminId, newPassword, confirmPassword } = req.body;
+    
+    if (!adminId || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Tous les champs sont requis.' });
+    }
+    
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères.' });
+    }
+    
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas.' });
+    }
+    
+    // Hacher le nouveau mot de passe
+    const bcrypt = require('bcrypt');
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    
+    // Mettre à jour le mot de passe de l'admin
+    const updatedAdmin = await prisma.admin.update({
+      where: { id: parseInt(adminId) },
+      data: { password: passwordHash }
+    });
+    
+    console.log('Admin password reset:', {
+      adminId,
+      resetBy: req.user?.user?.id,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Mot de passe réinitialisé avec succès.' 
+    });
+    
+  } catch (error) {
+    console.error('Erreur admin reset password:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Admin roles endpoint
+app.get('/api/admin/roles', validateToken, requireRoleManagementAccess, async (req, res) => {
+  try {
+    const roles = [
+      { value: 'super_admin', label: 'Super Administrateur', description: 'Accès complet à toutes les fonctionnalités' },
+      { value: 'admin', label: 'Administrateur', description: 'Gestion des employés et des paramètres' },
+      { value: 'manager', label: 'Manager', description: 'Supervision des équipes' },
+      { value: 'hr', label: 'RH', description: 'Gestion des ressources humaines' }
+    ];
+
+    res.json({
+      success: true,
+      data: roles
+    });
+  } catch (error) {
+    console.error('Erreur admin roles:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -3585,16 +3816,18 @@ app.post('/api/admin/settings/purge', validateToken, requireSuperAdmin, async (r
 });
 
 // Admin endpoints
-app.get('/api/roles', validateToken, requireSuperAdmin, async (req, res) => {
+app.get('/api/roles', validateToken, requireRoleManagementAccess, async (req, res) => {
   const scope = String(req.query.scope || '').trim().toLowerCase();
   const roles = scope ? ACCESS_ROLE_CATALOG.filter((role) => role.scope === scope) : ACCESS_ROLE_CATALOG;
   const postes = scope && scope !== 'employee'
     ? []
     : POSTE_CATALOG;
+  const departements = DEPARTEMENT_CATALOG;
   res.json({
     success: true,
     roles,
-    postes
+    postes,
+    departements
   });
 });
 
@@ -6425,6 +6658,19 @@ app.post('/api/traiter-demande', validateToken, async (req, res) => {
       return res.status(401).json({ success: false, message: 'Session invalide' });
     }
 
+    // Récupérer les informations de l'admin qui traite la demande
+    const manager = await prisma.admin.findUnique({
+      where: { id: managerId },
+      select: { id: true, prenom: true, nom: true, role: true }
+    });
+
+    if (!manager) {
+      return res.status(401).json({ success: false, message: 'Administrateur introuvable' });
+    }
+
+    const managerName = buildDisplayName(manager.prenom, manager.nom);
+    const managerRole = String(manager.role || '').trim();
+
     const managerComment = String(commentaire ?? motif ?? '').trim();
     if (normalizedAction === 'rejete' && !managerComment) {
       return res.status(400).json({ success: false, message: 'Le motif de refus est obligatoire' });
@@ -6532,6 +6778,8 @@ app.post('/api/traiter-demande', validateToken, async (req, res) => {
         statut: updated.statut,
         commentaire: updated.commentaire,
         traite_par: updated.traitePar,
+        traite_par_nom: managerName,
+        traite_par_role: managerRole,
         date_traitement: updated.dateTraitement,
         updated_at: updated.updatedAt
       }

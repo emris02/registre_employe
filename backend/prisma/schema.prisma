@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "binary"
 }
 
@@ -40,8 +40,6 @@ model Admin {
   pauses          Pause[]
   pointages       Pointage[]     @relation("AdminPointages")
   retards         Retard[]       @relation("AdminRetards")
-  scanDevices     ScanDevice[]
-  scanSessions    ScanSession[]
 
   @@map("admins")
 }
@@ -498,40 +496,4 @@ enum RetardStatut {
   approuve
   refuse
   ignore
-}
-
-model ScanDevice {
-  id          Int           @id @default(autoincrement())
-  fingerprint String        @db.VarChar(255)
-  userAgent   String?       @db.Text
-  platform    String?       @db.VarChar(100)
-  type        String?       @db.VarChar(50)
-  name        String        @db.VarChar(100)
-  method      String?       @default("fingerprint") @db.VarChar(20)
-  trusted     Boolean       @default(false)
-  lastSeen    DateTime      @default(now()) @map("last_seen")
-  adminId     Int           @map("admin_id")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  sessions    ScanSession[]
-
-  @@unique([fingerprint, method])
-  @@map("scan_devices")
-}
-
-model ScanSession {
-  id         Int         @id @default(autoincrement())
-  deviceId   Int         @map("device_id")
-  adminId    Int         @map("admin_id")
-  adminName  String      @map("admin_name")
-  method     String      @default("fingerprint")
-  deviceInfo String      @map("device_info")
-  unlockedAt DateTime    @default(now()) @map("unlocked_at")
-  expiresAt  DateTime    @map("expires_at")
-  active     Boolean     @default(true)
-  createdAt  DateTime    @default(now()) @map("created_at")
-  device     ScanDevice? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  admin      Admin       @relation(fields: [adminId], references: [id], onDelete: Cascade)
-
-  @@map("scan_sessions")
 }
