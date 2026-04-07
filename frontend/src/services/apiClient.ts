@@ -5,32 +5,15 @@ export interface ApiError {
 }
 
 const resolveDefaultBaseUrl = (): string => {
-  // En production, utiliser toujours l'URL relative pour éviter d'exposer les secrets
-  if (import.meta.env.PROD) {
-    return '/api';
-  }
-  
-  // En développement, utiliser la variable d'environnement si disponible
+  // Utiliser la variable d'environnement VITE_API_URL si disponible
   const rawEnvValue = String(import.meta.env?.VITE_API_URL ?? '').trim();
-  if (!rawEnvValue) return '/api';
-
-  const normalized = rawEnvValue.replace(/\/+$/, '');
-  const isBrowser = typeof window !== 'undefined';
-  const runningOnLocalhost = isBrowser
-    ? ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    : false;
-  const envTargetsLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(normalized);
-
-  // Prevent production builds from using a localhost API URL accidentally.
-  if (isBrowser && !runningOnLocalhost && envTargetsLocalhost) {
-    return '/api';
-  }
-
-  if (/^https?:\/\//i.test(normalized)) {
+  if (rawEnvValue) {
+    const normalized = rawEnvValue.replace(/\/+$/, '');
     return /\/api$/i.test(normalized) ? normalized : `${normalized}/api`;
   }
-
-  return normalized.startsWith('/api') ? normalized : '/api';
+  
+  // Par défaut, utiliser URL relative
+  return '/api';
 };
 
 const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
