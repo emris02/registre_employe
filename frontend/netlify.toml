@@ -1,11 +1,28 @@
 [build]
-  command = "npm run build"
+  base = "frontend"
+  command = "rm -f tsconfig.tsbuildinfo && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
+  NPM_CONFIG_PRODUCTION = "false"
+  VITE_API_URL = "https://registre-employe.onrender.com/api"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://registre-employe.onrender.com/api/:splat"
+  status = 200
+  force = true
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Access-Control-Allow-Origin = "*"
