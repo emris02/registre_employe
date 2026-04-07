@@ -1552,10 +1552,10 @@ export default function ScanQRPage() {
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 p-6 space-y-4 transform transition-all duration-300 scale-100 opacity-100">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                <div className="flex items-center justify-center w-10 h-10 bg-red-100 rounded-full">
-                  <FileText className="w-5 h-5 text-red-600" />
+                <div className="flex items-center justify-center w-10 h-10 bg-yellow-100 rounded-full">
+                  <FileText className="w-5 h-5 text-yellow-600" />
                 </div>
-                Justification requise
+                {justificationDecision.message.includes('obligatoire') ? 'Justification requise' : 'Justification optionnelle'}
               </h3>
               <button
                 onClick={() => setJustificationDecision(null)}
@@ -1565,8 +1565,8 @@ export default function ScanQRPage() {
               </button>
             </div>
             
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-800 font-medium mb-4">{justificationDecision.message}</p>
+            <div className={`${justificationDecision.message.includes('obligatoire') ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'} border rounded-lg p-4`}>
+              <p className={`${justificationDecision.message.includes('obligatoire') ? 'text-red-800' : 'text-yellow-800'} font-medium mb-4`}>{justificationDecision.message}</p>
               <div className="bg-white rounded-lg p-3 border border-red-200">
                 <p className="text-sm text-red-700 font-medium mb-2">
                   Motif: <span className="inline-flex items-center px-2 py-1 bg-red-100 text-red-800 rounded-md text-xs">{getJustificationReasonLabel(justificationDecision.reason)}</span>
@@ -1593,11 +1593,19 @@ export default function ScanQRPage() {
             </div>
             
             <div className="flex gap-2">
+              {!justificationDecision.message.includes('obligatoire') && (
+                <button 
+                  onClick={handleJustificationDecisionClose} 
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors" 
+                >
+                  Continuer sans justification
+                </button>
+              )}
               <button 
                 onClick={handleJustificationDecisionClose} 
-                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors" 
+                className={`${justificationDecision.message.includes('obligatoire') ? 'flex-1' : ''} px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors`} 
               >
-                Annuler
+                {justificationDecision.message.includes('obligatoire') ? 'Annuler' : 'Plus tard'}
               </button>
               <button 
                 onClick={handleJustificationDecisionSubmit} 

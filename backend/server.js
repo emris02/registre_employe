@@ -216,15 +216,15 @@ const resolveBadgeAccessMessage = (code) => {
     return 'Accès refusé: compte désactivé. Votre badge n\'est pas valide.';
   }
   if (code === 'BADGE_EXPIRED') {
-    return 'Accès refusé: badge expiré. Votre badge n\'est pas valide.';
+    return 'Badge expiré - Ce badge n\'appartient pas à votre session actuelle. Pour pointer, vous devez vous connecter avec VOTRE propre compte employé. Cette mesure de sécurité empêche un administrateur d\'utiliser le badge d\'un autre employé.';
   }
   if (code === 'BADGE_INACTIVE') {
-    return 'Accès refusé: badge inactif. Votre badge n\'est pas valide.';
+    return 'Badge inactif - Ce badge n\'appartient pas à votre session actuelle. Pour pointer, vous devez vous connecter avec VOTRE propre compte employé. Cette mesure de sécurité empêche un administrateur d\'utiliser le badge d\'un autre employé.';
   }
   if (code === 'BADGE_NOT_FOUND') {
-    return 'Accès refusé: aucun badge actif associé à ce compte.';
+    return 'Badge non trouvé - Vous n\'avez aucun badge actif. Pour pointer, vous devez vous connecter avec VOTRE propre compte employé et générer votre badge personnel.';
   }
-  return 'Accès refusé: badge non valide.';
+  return 'Badge non valide - Ce badge n\'appartient pas à votre session. Vous devez utiliser votre propre compte pour pointer.';
 };
 
 const resolveUserSnapshotForBadgeAccess = async ({ userType, userId }) => {
@@ -402,7 +402,7 @@ const requireAuthenticatedSessionWithActiveBadge = async (req, res, next) => {
     if (!SUPPORTED_SESSION_USER_TYPES.has(requesterType) || !Number.isInteger(requesterId) || requesterId <= 0) {
       return res.status(401).json({
         success: false,
-        message: 'Session invalide.',
+        message: 'Session invalide - Ce badge n\'appartient pas à votre compte connecté. Vous devez utiliser votre propre session employé pour pointer.',
         code: 'SESSION_INVALID'
       });
     }
