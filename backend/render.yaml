@@ -17,3 +17,9 @@ services:
         sync: false
       - key: BADGE_SECRET
         sync: false
+      - key: CORS_ORIGIN
+        value: https://registre-employe.netlify.app
+      - key: FRONTEND_URL
+        value: https://registre-employe.netlify.app
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://registre-employe.netlify.app
