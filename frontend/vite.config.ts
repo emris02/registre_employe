@@ -36,12 +36,6 @@ export default defineConfig({
         }
       }
     }
-  },
-  define: {
-    // Éviter d'exposer les variables d'environnement dans le build
-    'import.meta.env.VITE_NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
-    'import.meta.env.VITE_DEBUG': JSON.stringify('false'),
-    'import.meta.env.VITE_LOG_LEVEL': JSON.stringify('error')
   }
 })
 

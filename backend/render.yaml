@@ -3,7 +3,7 @@ services:
     name: xpert-backend
     env: node
     rootDir: backend
-    buildCommand: npm install && npm run prisma:generate
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
     startCommand: npm start
     healthCheckPath: /api/health
     plan: free
@@ -11,6 +11,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3003
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
